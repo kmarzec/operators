@@ -13,7 +13,7 @@
 #include <string>
 
 
-const int64_t NUM_DIGITS = 6;
+const int64_t NUM_DIGITS = 3;
 
 
 const int64_t NUM_OP_SPOTS = NUM_DIGITS - 1;
@@ -27,16 +27,16 @@ enum EOps
 	EOP_MINUS,
 	EOP_MUL,
 	EOP_DIV,
+	EOP_CONCAT,
 
 	__EOP_COUNT,
 
 	
-	EOP_POW,
-	EOP_CONCAT
+	EOP_POW
 };
 
 
-char acOpSymbols[] = {'+', '-', '*', '/', '^', '|'};
+char acOpSymbols[] = {'+', '-', '*', '/', '|', '^'};
 
 
 
@@ -60,28 +60,28 @@ struct Expression
 
 		RPNStackItem()
 			: type(None)
-			, op(__EOP_COUNT)
-			, numerator(-1)
-			, denominator(-1)
+			//, op(__EOP_COUNT)
+			//, numerator(-1)
+			//, denominator(-1)
 		{}
 
 		RPNStackItem(EOps op)
 			: type(Operand)
 			, op(op)
-			, numerator(-1)
-			, denominator(-1)
+			//, numerator(-1)
+			//, denominator(-1)
 		{}
 
 		RPNStackItem(int64_t val)
 			: type(SourceValue)
-			, op(__EOP_COUNT)
+			//, op(__EOP_COUNT)
 			, numerator(val)
 			, denominator(1)
 		{}
 
 		RPNStackItem(int64_t nominator, int64_t denominator)
 			: type(CalculatedValue)
-			, op(__EOP_COUNT)
+			//, op(__EOP_COUNT)
 			, numerator(nominator)
 			, denominator(denominator)
 		{
@@ -89,6 +89,30 @@ struct Expression
 			{
 				type = NANValue;
 			}
+		}
+
+		void SetOp(EOps o)
+		{
+			type = Operand;
+			op = o;
+			//numerator = -1;
+			//denominator = -1;
+		}
+
+		void SetSourceVal(int64_t val)
+		{
+			type = SourceValue;
+			//op = __EOP_COUNT;
+			numerator = val;
+			denominator = 1;
+		}
+
+		void SetCalculatedVal(int64_t nominator, int64_t d)
+		{
+			type = (d == 0) ? NANValue : CalculatedValue;
+			//op = __EOP_COUNT;
+			numerator = nominator;
+			denominator = d;
 		}
 
 		void Reduce()
@@ -118,8 +142,7 @@ struct Expression
 
 	EOps aiOps[NUM_OPS];
 	int64_t aiOpLocations[NUM_OP_SPOTS];
-	std::vector<RPNStackItem> m_vRPNExpression;
-	std::string m_expString;
+	RPNStackItem m_vRPNExpression[NUM_DIGITS + NUM_OPS];
 	RPNStackItem m_result;
 	
 	void ResolveOps(int64_t iOpCombinationCode)
@@ -149,14 +172,6 @@ struct Expression
 
 	void GenerateRPNExpression()
 	{
-		//char acExp[NUM_DIGITS + NUM_OPS + 1];
-		//acExp[NUM_DIGITS + NUM_OPS] = 0;
-
-		m_vRPNExpression.clear();
-		m_vRPNExpression.resize(NUM_DIGITS + NUM_OPS);
-
-
-
 		int64_t iCharPtr = NUM_DIGITS + NUM_OPS - 1;
 		int64_t iNumDigits = 0;
 		int64_t iOpIdx = 0;
@@ -165,31 +180,32 @@ struct Expression
 		{
 			if (iNumDigits < NUM_OP_SPOTS && aiOpLocations[iNumDigits] > 0)
 			{
-				m_vRPNExpression[iCharPtr] = RPNStackItem(aiOps[iOpIdx++]);
+				m_vRPNExpression[iCharPtr].SetOp(aiOps[iOpIdx++]);
 				aiOpLocations[iNumDigits]--;
 			}
 			else
 			{
-				m_vRPNExpression[iCharPtr] = RPNStackItem(NUM_DIGITS - iNumDigits);
+				m_vRPNExpression[iCharPtr].SetSourceVal(NUM_DIGITS - iNumDigits);
 				iNumDigits++;
 			}
 
 			iCharPtr--;
-		}
+		}	
+	}
 
-		//printf("%s\n", acExp);
-
-		m_expString.clear();
+	std::string ToRPNString()
+	{
+		std::string resultStr;
 
 		for (const RPNStackItem& item : m_vRPNExpression)
 		{
 			switch (item.type)
 			{
 			case RPNStackItem::Operand:
-				m_expString += acOpSymbols[item.op];
+				resultStr += acOpSymbols[item.op];
 				break;
 			case RPNStackItem::SourceValue:
-				m_expString += std::to_string(item.numerator);
+				resultStr += std::to_string(item.numerator);
 				break;
 
 			default:
@@ -197,15 +213,61 @@ struct Expression
 			};
 		}
 
-		//expString += "\n";
-		//printf(expString.c_str());
+		return resultStr;
 	}
+
+
+	class RPNStack
+	{
+	public:
+
+		RPNStack()
+			: ptr(-1)
+		{}
+
+		RPNStackItem& push()
+		{
+			assert(ptr < NUM_DIGITS-1);
+			return m_stack[++ptr];
+		}
+
+		void pop()
+		{
+			assert(ptr >= 0);
+			ptr--;
+		}
+
+		const RPNStackItem& top()
+		{
+			return m_stack[ptr];
+		}
+
+		int64_t size()
+		{
+			return ptr+1;
+		}
+
+		void clear()
+		{
+			ptr = -1;
+		}
+
+	private:
+
+		RPNStackItem m_stack[NUM_DIGITS];
+		int64_t ptr;
+	};
+
+	RPNStack stack;
+
 
 	void EvaluateRPNExpression()
 	{
-		std::stack<RPNStackItem> stack;
+		//std::stack<RPNStackItem> stack;
+		stack.clear();
 
-		for (const RPNStackItem& item : m_vRPNExpression)
+
+		for (const RPNStackItem& item :  m_vRPNExpression)
 		{
 			switch (item.type)
 			{
@@ -225,36 +287,58 @@ struct Expression
 				{
 					int64_t nominator = val1.numerator * val2.denominator + val2.numerator * val1.denominator;
 					int64_t denominator = val1.denominator * val2.denominator;
-					RPNStackItem result(nominator, denominator);
+					RPNStackItem& result = stack.push();
+					result.SetCalculatedVal(nominator, denominator);
 					result.Reduce();
-					stack.push(result);
 					break;
 				}
 				case EOP_MINUS:
 				{
 					int64_t nominator = val1.numerator * val2.denominator - val2.numerator * val1.denominator;
 					int64_t denominator = val1.denominator * val2.denominator;
-					RPNStackItem result(nominator, denominator);
+					RPNStackItem& result = stack.push();
+					result.SetCalculatedVal(nominator, denominator);
 					result.Reduce();
-					stack.push(result);
 					break;
 				}
 				case EOP_MUL:
 				{
 					int64_t nominator = val1.numerator * val2.numerator;
 					int64_t denominator = val1.denominator * val2.denominator;
-					RPNStackItem result(nominator, denominator);
+					RPNStackItem& result = stack.push();
+					result.SetCalculatedVal(nominator, denominator);
 					result.Reduce();
-					stack.push(result);
 					break;
 				}
 				case EOP_DIV:
 				{
 					int64_t nominator = val1.numerator * val2.denominator;
 					int64_t denominator = val1.denominator * val2.numerator;
-					RPNStackItem result(nominator, denominator);
+					RPNStackItem& result = stack.push();
+					result.SetCalculatedVal(nominator, denominator);
 					result.Reduce();
-					stack.push(result);
+					break;
+				}
+				case EOP_CONCAT:
+				{
+					if (val1.type != RPNStackItem::SourceValue || val2.type != RPNStackItem::SourceValue)
+					{
+						stack.push().SetCalculatedVal(0, 0);
+					}
+					else
+					{
+						int64_t left = val1.numerator;
+						int64_t right = val2.numerator;
+						int64_t mult = 10;
+						while (right / mult)
+						{
+							mult *= 10;
+						}
+						int64_t res = right + (left * mult);
+						RPNStackItem& result = stack.push();
+						result.SetSourceVal(res);
+					}
+
 					break;
 				}
 				default:
@@ -265,7 +349,7 @@ struct Expression
 			}
 
 			case RPNStackItem::SourceValue:
-				stack.push(item);
+				stack.push().SetSourceVal(item.numerator);
 				break;
 
 			default:
@@ -356,26 +440,30 @@ int main()
 
 	//return 0; 
 
+	const int arraySize = 100;
+
+	std::vector<Expression> results(arraySize);
 
 
-	std::vector<Expression> results(100);
-
+	Expression e;
 
 	for (int64_t i = 0; i < iNumTotalCombinations; ++i)
 	{
 		int64_t iOpCombinationCode = i % iNumOpCombinations;
 		int64_t iOpLocationCode = i / iNumOpCombinations;
 
-		Expression e;
+		
 
 		e.ResolveOps(iOpCombinationCode);
 		e.ResolveOpLocations(iOpLocationCode);
 		e.GenerateRPNExpression();
 		e.EvaluateRPNExpression();
 
+		
+
 		if ((e.m_result.type == Expression::RPNStackItem::SourceValue || e.m_result.type == Expression::RPNStackItem::CalculatedValue) && e.m_result.denominator == 1)
 		{
-			if (e.m_result.numerator >= 0 && e.m_result.numerator < 100)
+			if (e.m_result.numerator >= 0 && e.m_result.numerator < arraySize)
 			{
 				if (results[e.m_result.numerator].m_result.type == Expression::RPNStackItem::None)
 				{
@@ -386,12 +474,13 @@ int main()
 	}
 
 
-
-	for (int64_t i = 0; i < 100; ++i)
+	
+	for (int64_t i = 0; i < arraySize; ++i)
 	{
-		printf("%I64d = %s\n", i, results[i].m_expString.c_str());
+		std::string epxString = results[i].ToRPNString();
+		printf("%I64d = %s\n", i, epxString.c_str());
 	}
-
+	
 
 
 	printf("Time: %.2f\n", timer.GetElapsedTime());
