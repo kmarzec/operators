@@ -9,15 +9,19 @@
 
 #include <vector>
 #include <stack>
+#include <thread>
+#include <atomic>
 
 #include <string>
 
 
-const int64_t NUM_DIGITS = 3;
+const int64_t NUM_DIGITS = 9;
 
 
 const int64_t NUM_OP_SPOTS = NUM_DIGITS - 1;
 const int64_t NUM_OPS = NUM_DIGITS - 1;
+
+
 
 
 
@@ -29,9 +33,8 @@ enum EOps
 	EOP_DIV,
 	EOP_CONCAT,
 
-	__EOP_COUNT,
+	__EOP_COUNT,	
 
-	
 	EOP_POW
 };
 
@@ -405,6 +408,26 @@ private:
 
 
 
+class SpinLock 
+{
+	std::atomic_flag locked = ATOMIC_FLAG_INIT;
+
+public:
+	void lock() 
+	{
+		while (locked.test_and_set(std::memory_order_acquire)) { ; }
+	}
+
+	void unlock() 
+	{
+		locked.clear(std::memory_order_release);
+	}
+};
+
+
+
+
+
 int main()
 {
 	Timer timer;
@@ -440,52 +463,77 @@ int main()
 
 	//return 0; 
 
-	const int arraySize = 100;
+	const int arraySize = 11000;
+	std::vector<std::pair<Expression, SpinLock>> results(arraySize);
+	//SpinLock resultsLock;
 
-	std::vector<Expression> results(arraySize);
 
-
-	Expression e;
-
-	for (int64_t i = 0; i < iNumTotalCombinations; ++i)
+	auto l = [&](int64_t start, int64_t end)
 	{
-		int64_t iOpCombinationCode = i % iNumOpCombinations;
-		int64_t iOpLocationCode = i / iNumOpCombinations;
+		Expression e;
 
-		
-
-		e.ResolveOps(iOpCombinationCode);
-		e.ResolveOpLocations(iOpLocationCode);
-		e.GenerateRPNExpression();
-		e.EvaluateRPNExpression();
-
-		
-
-		if ((e.m_result.type == Expression::RPNStackItem::SourceValue || e.m_result.type == Expression::RPNStackItem::CalculatedValue) && e.m_result.denominator == 1)
+		for (int64_t i = start; i < end; ++i)
 		{
-			if (e.m_result.numerator >= 0 && e.m_result.numerator < arraySize)
+			int64_t iOpCombinationCode = i % iNumOpCombinations;
+			int64_t iOpLocationCode = i / iNumOpCombinations;
+
+			e.ResolveOps(iOpCombinationCode);
+			e.ResolveOpLocations(iOpLocationCode);
+			e.GenerateRPNExpression();
+			e.EvaluateRPNExpression();
+
+			if ((e.m_result.type == Expression::RPNStackItem::SourceValue || e.m_result.type == Expression::RPNStackItem::CalculatedValue) && e.m_result.denominator == 1)
 			{
-				if (results[e.m_result.numerator].m_result.type == Expression::RPNStackItem::None)
+				if (e.m_result.numerator >= 0 && e.m_result.numerator < arraySize)
 				{
-					results[e.m_result.numerator] = e;
+					results[e.m_result.numerator].second.lock();
+
+					if (results[e.m_result.numerator].first.m_result.type == Expression::RPNStackItem::None)
+					{
+						results[e.m_result.numerator].first = e;
+					}
+
+					results[e.m_result.numerator].second.unlock();
 				}
 			}
 		}
+	};
+
+	std::vector<std::thread> vThreads;
+	int64_t numThreads = std::thread::hardware_concurrency();
+	int64_t combPerThread = iNumTotalCombinations / numThreads;
+
+	for (int t = 0; t < numThreads; ++t)
+	{
+		int64_t start = t * combPerThread;
+		int64_t end = (t + 1) * combPerThread;
+		if (t == numThreads-1)
+		{
+			end = iNumTotalCombinations;
+		}
+
+		vThreads.emplace_back(l, start, end);
 	}
 
+	for (std::thread& thread : vThreads)
+	{
+		thread.join();
+	}
 
 	
 	for (int64_t i = 0; i < arraySize; ++i)
 	{
-		std::string epxString = results[i].ToRPNString();
+		std::string epxString = results[i].first.ToRPNString();
 		printf("%I64d = %s\n", i, epxString.c_str());
 	}
 	
 
+	float time = timer.GetElapsedTime();
+	printf("Time: %.2f\n", time);
+	printf("Millions of combinations/s: %.2f\n", (float)iNumTotalCombinations / (time*1000000.0f));
 
-	printf("Time: %.2f\n", timer.GetElapsedTime());
 
-	system("pause");
+	//system("pause");
     return 0;
 }
 
