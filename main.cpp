@@ -15,14 +15,19 @@
 #include <string>
 
 
+#define ENABLE_INTSAFE_SIGNED_FUNCTIONS
+#include <intsafe.h>
+
+
+////////////////////////////
+
 const int64_t NUM_DIGITS = 9;
 
 
-const int64_t NUM_OP_SPOTS = NUM_DIGITS - 1;
-const int64_t NUM_OPS = NUM_DIGITS - 1;
-
-
-
+bool s_bPrintAllCombinations = false;
+bool s_bPrintResultArray = true;
+bool s_bMultiThreaded = false;
+bool s_bPauseAtExit = true;
 
 
 enum EOps
@@ -31,15 +36,19 @@ enum EOps
 	EOP_MINUS,
 	EOP_MUL,
 	EOP_DIV,
+	EOP_POW,
 	EOP_CONCAT,
 
-	__EOP_COUNT,	
-
-	EOP_POW
+	__EOP_COUNT = 3,
 };
 
 
-char acOpSymbols[] = {'+', '-', '*', '/', '|', '^'};
+char acOpSymbols[] = {'+', '-', '*', '/', '^', '|'};
+
+///////////////////////////////
+
+const int64_t NUM_OP_SPOTS = NUM_DIGITS - 1;
+const int64_t NUM_OPS = NUM_DIGITS - 1;
 
 
 
@@ -200,20 +209,23 @@ struct Expression
 	{
 		std::string resultStr;
 
-		for (const RPNStackItem& item : m_vRPNExpression)
+		if (m_result.type != RPNStackItem::None)
 		{
-			switch (item.type)
+			for (const RPNStackItem& item : m_vRPNExpression)
 			{
-			case RPNStackItem::Operand:
-				resultStr += acOpSymbols[item.op];
-				break;
-			case RPNStackItem::SourceValue:
-				resultStr += std::to_string(item.numerator);
-				break;
+				switch (item.type)
+				{
+				case RPNStackItem::Operand:
+					resultStr += acOpSymbols[item.op];
+					break;
+				case RPNStackItem::SourceValue:
+					resultStr += std::to_string(item.numerator);
+					break;
 
-			default:
-				assert(0);
-			};
+				default:
+					assert(0);
+				};
+			}
 		}
 
 		return resultStr;
@@ -264,6 +276,39 @@ struct Expression
 	RPNStack stack;
 
 
+	HRESULT ipow(int64_t base, int64_t exp, int64_t* result)
+	{
+		assert(exp >= 0);
+
+		*result = 1;
+
+		while (exp)
+		{
+			if (exp & 1)
+			{
+				//*result *= base;
+
+				HRESULT res = LongLongMult(*result, base, result);
+				if (res != S_OK)
+				{
+					return res;
+				}
+			}
+
+			exp >>= 1;
+
+			//base *= base;
+			HRESULT res = LongLongMult(base, base, &base);
+			if (res != S_OK)
+			{
+				return res;
+			}
+		}
+
+		return S_OK;
+	}
+
+
 	void EvaluateRPNExpression()
 	{
 		//std::stack<RPNStackItem> stack;
@@ -288,38 +333,99 @@ struct Expression
 				{
 				case EOP_PLUS:
 				{
-					int64_t nominator = val1.numerator * val2.denominator + val2.numerator * val1.denominator;
-					int64_t denominator = val1.denominator * val2.denominator;
-					RPNStackItem& result = stack.push();
-					result.SetCalculatedVal(nominator, denominator);
-					result.Reduce();
+					//int64_t nominator = val1.numerator * val2.denominator + val2.numerator * val1.denominator;
+					//int64_t denominator = val1.denominator * val2.denominator;
+					
+					int64_t nominatorPart1;
+					int64_t nominatorPart2;
+					int64_t nominator;
+					int64_t denominator;
+
+					HRESULT res1 = LongLongMult(val1.numerator, val2.denominator, &nominatorPart1);
+					HRESULT res2 = LongLongMult(val2.numerator, val1.denominator, &nominatorPart2);
+					HRESULT res3 = LongLongAdd(nominatorPart1, nominatorPart2, &nominator);
+					HRESULT res4 = LongLongMult(val1.denominator, val2.denominator, &denominator);
+					
+					if (res1 == S_OK && res2 == S_OK && res3 == S_OK && res4 == S_OK)
+					{
+						RPNStackItem& result = stack.push();
+						result.SetCalculatedVal(nominator, denominator);
+						result.Reduce();
+					}
+					else
+					{
+						stack.push().SetCalculatedVal(0, 0);
+					}
 					break;
 				}
 				case EOP_MINUS:
 				{
-					int64_t nominator = val1.numerator * val2.denominator - val2.numerator * val1.denominator;
-					int64_t denominator = val1.denominator * val2.denominator;
-					RPNStackItem& result = stack.push();
-					result.SetCalculatedVal(nominator, denominator);
-					result.Reduce();
+					//int64_t nominator = val1.numerator * val2.denominator - val2.numerator * val1.denominator;
+					//int64_t denominator = val1.denominator * val2.denominator;
+
+					int64_t nominatorPart1;
+					int64_t nominatorPart2;
+					int64_t nominator;
+					int64_t denominator;
+
+					HRESULT res1 = LongLongMult(val1.numerator, val2.denominator, &nominatorPart1);
+					HRESULT res2 = LongLongMult(val2.numerator, val1.denominator, &nominatorPart2);
+					HRESULT res3 = LongLongSub(nominatorPart1, nominatorPart2, &nominator);
+					HRESULT res4 = LongLongMult(val1.denominator, val2.denominator, &denominator);
+
+					if (res1 == S_OK && res2 == S_OK && res3 == S_OK && res4 == S_OK)
+					{
+						RPNStackItem& result = stack.push();
+						result.SetCalculatedVal(nominator, denominator);
+						result.Reduce();
+					}
+					else
+					{
+						stack.push().SetCalculatedVal(0, 0);
+					}
 					break;
 				}
 				case EOP_MUL:
 				{
-					int64_t nominator = val1.numerator * val2.numerator;
-					int64_t denominator = val1.denominator * val2.denominator;
-					RPNStackItem& result = stack.push();
-					result.SetCalculatedVal(nominator, denominator);
-					result.Reduce();
+					int64_t nominator; // = val1.numerator * val2.numerator;
+					int64_t denominator; // = val1.denominator * val2.denominator;
+					
+					HRESULT res1 = LongLongMult(val1.numerator, val2.numerator, &nominator);
+					HRESULT res2 = LongLongMult(val1.denominator, val2.denominator, &denominator);
+					
+					if (res1 == S_OK && res2 == S_OK)
+					{
+						RPNStackItem& result = stack.push();
+						result.SetCalculatedVal(nominator, denominator);
+						result.Reduce();
+					}
+					else
+					{
+						stack.push().SetCalculatedVal(0, 0);
+					}
 					break;
 				}
 				case EOP_DIV:
 				{
-					int64_t nominator = val1.numerator * val2.denominator;
-					int64_t denominator = val1.denominator * val2.numerator;
-					RPNStackItem& result = stack.push();
-					result.SetCalculatedVal(nominator, denominator);
-					result.Reduce();
+					//int64_t nominator = val1.numerator * val2.denominator;
+					//int64_t denominator = val1.denominator * val2.numerator;
+
+					int64_t nominator; // = val1.numerator * val2.numerator;
+					int64_t denominator; // = val1.denominator * val2.denominator;
+
+					HRESULT res1 = LongLongMult(val1.numerator, val2.denominator, &nominator);
+					HRESULT res2 = LongLongMult(val1.denominator, val2.numerator, &denominator);
+
+					if (res1 == S_OK && res2 == S_OK)
+					{
+						RPNStackItem& result = stack.push();
+						result.SetCalculatedVal(nominator, denominator);
+						result.Reduce();
+					}
+					else
+					{
+						stack.push().SetCalculatedVal(0, 0);
+					}
 					break;
 				}
 				case EOP_CONCAT:
@@ -332,18 +438,81 @@ struct Expression
 					{
 						int64_t left = val1.numerator;
 						int64_t right = val2.numerator;
+
+						HRESULT res1 = S_OK;
 						int64_t mult = 10;
 						while (right / mult)
 						{
-							mult *= 10;
+							//mult *= 10;
+							res1 = LongLongMult(mult, 10LL, &mult);
 						}
-						int64_t res = right + (left * mult);
-						RPNStackItem& result = stack.push();
-						result.SetSourceVal(res);
-					}
 
+						//int64_t res = right + (left * mult);
+						int64_t resPart;
+						int64_t numerator;
+						HRESULT res2 = LongLongMult(left, mult, &resPart);
+						HRESULT res3 = LongLongAdd(right, resPart, &numerator);
+
+						if (res1 == S_OK && res2 == S_OK && res3 == S_OK)
+						{
+							RPNStackItem& result = stack.push();
+							result.SetSourceVal(numerator);
+						}
+						else
+						{
+							stack.push().SetCalculatedVal(0, 0);
+						}
+					}
 					break;
 				}
+				case EOP_POW:
+				{
+					if (val2.denominator == 1)
+					{
+						if (val2.numerator > 0)
+						{
+							int64_t nominator;
+							HRESULT res1 = ipow(val1.numerator, val2.numerator, &nominator);
+							int64_t denominator;
+							HRESULT res2 = ipow(val1.denominator, val2.numerator, &denominator);
+
+							if (res1 == S_OK && res2 == S_OK)
+							{
+								RPNStackItem& result = stack.push();
+								result.SetCalculatedVal(nominator, denominator);
+								result.Reduce();
+							}
+							else
+							{
+								stack.push().SetCalculatedVal(0, 0);
+							}
+						}
+						else
+						{
+							int64_t nominator;
+							HRESULT res1 = ipow(val1.denominator, -val2.numerator, &nominator);
+							int64_t denominator;
+							HRESULT res2 = ipow(val1.numerator, -val2.numerator, &denominator);
+
+							if (res1 == S_OK && res2 == S_OK)
+							{
+								RPNStackItem& result = stack.push();
+								result.SetCalculatedVal(nominator, denominator);
+								result.Reduce();
+							}
+							else
+							{
+								stack.push().SetCalculatedVal(0, 0);
+							}
+						}
+					}
+					else
+					{
+						stack.push().SetCalculatedVal(0, 0);
+					}
+					break;
+				}
+
 				default:
 					assert(0);
 				};
@@ -371,16 +540,6 @@ struct Expression
 			stack.top().type == RPNStackItem::SourceValue || 
 			stack.top().type == RPNStackItem::CalculatedValue || 
 			stack.top().type == RPNStackItem::NANValue);
-
-		/*
-		if (stack.top().denominator == 1)
-		{
-			printf(" = %I64d\n", stack.top().numerator);
-		}
-		else
-		{
-			printf(" = %I64d/%I64d\n", stack.top().numerator, stack.top().denominator);
-		}*/
 
 		m_result = stack.top();
 	}
@@ -450,8 +609,6 @@ int main()
 
 
 
-
-
 	printf("NumDigits: %I64d\n", NUM_DIGITS);
 	printf("NumOpSpots: %I64d\n", NUM_OP_SPOTS);
 	printf("NumOps: %I64d\n", NUM_OPS);
@@ -459,13 +616,13 @@ int main()
 	printf("iNumOpLocationCombinations: %I64d\n", iNumOpLocationCombinations);
 	printf("iNumTotalCombinations: %I64d\n", iNumTotalCombinations);
 
+	float fEstimatedMCPS = 16.1f;
+	float fEstimatedTime = iNumTotalCombinations / (fEstimatedMCPS * 1000000.0f);
+	printf("Estimated Time: %.2f\n", fEstimatedTime);
 
 
-	//return 0; 
-
-	const int arraySize = 11000;
+	const int arraySize = 100;
 	std::vector<std::pair<Expression, SpinLock>> results(arraySize);
-	//SpinLock resultsLock;
 
 
 	auto l = [&](int64_t start, int64_t end)
@@ -481,6 +638,28 @@ int main()
 			e.ResolveOpLocations(iOpLocationCode);
 			e.GenerateRPNExpression();
 			e.EvaluateRPNExpression();
+
+			if(s_bPrintAllCombinations)
+			{
+				std::string epxString = e.ToRPNString();
+				printf(epxString.c_str());
+				if ((e.m_result.type == Expression::RPNStackItem::SourceValue || e.m_result.type == Expression::RPNStackItem::CalculatedValue))
+				{
+					if (e.m_result.denominator == 1)
+					{
+						printf(" = %I64d\n", e.m_result.numerator);
+					}
+					else
+					{
+						printf(" = %I64d/%I64d\n", e.m_result.numerator, e.m_result.denominator);
+					}
+				}
+				else
+				{
+					printf(" = \n");
+				}
+			}
+
 
 			if ((e.m_result.type == Expression::RPNStackItem::SourceValue || e.m_result.type == Expression::RPNStackItem::CalculatedValue) && e.m_result.denominator == 1)
 			{
@@ -500,7 +679,7 @@ int main()
 	};
 
 	std::vector<std::thread> vThreads;
-	int64_t numThreads = std::thread::hardware_concurrency();
+	int64_t numThreads = s_bMultiThreaded ? std::thread::hardware_concurrency() : 1;
 	int64_t combPerThread = iNumTotalCombinations / numThreads;
 
 	for (int t = 0; t < numThreads; ++t)
@@ -521,19 +700,25 @@ int main()
 	}
 
 	
-	for (int64_t i = 0; i < arraySize; ++i)
+	if (s_bPrintResultArray)
 	{
-		std::string epxString = results[i].first.ToRPNString();
-		printf("%I64d = %s\n", i, epxString.c_str());
+		for (int64_t i = 0; i < arraySize; ++i)
+		{
+			std::string epxString = results[i].first.ToRPNString();
+			printf("%I64d = %s\n", i, epxString.c_str());
+		}
 	}
 	
 
 	float time = timer.GetElapsedTime();
 	printf("Time: %.2f\n", time);
-	printf("Millions of combinations/s: %.2f\n", (float)iNumTotalCombinations / (time*1000000.0f));
+	float fMCPS = (float)iNumTotalCombinations / (time*1000000.0f);
+	printf("Millions of combinations/s: %.2f\n", fMCPS);
 
-
-	//system("pause");
+	if (s_bPauseAtExit)
+	{
+		system("pause");
+	}
     return 0;
 }
 
