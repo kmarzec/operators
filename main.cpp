@@ -26,8 +26,10 @@ const int64_t NUM_DIGITS = 9;
 
 bool s_bPrintAllCombinations = false;
 bool s_bPrintResultArray = true;
-bool s_bMultiThreaded = false;
-bool s_bPauseAtExit = true;
+bool s_bMultiThreaded = true;
+bool s_bPauseAtExit = false;
+
+const int arraySize = 12000;
 
 
 enum EOps
@@ -39,7 +41,7 @@ enum EOps
 	EOP_POW,
 	EOP_CONCAT,
 
-	__EOP_COUNT = 3,
+	__EOP_COUNT = 6,
 };
 
 
@@ -52,6 +54,48 @@ const int64_t NUM_OPS = NUM_DIGITS - 1;
 
 
 
+
+uint64_t gcd(uint64_t u, uint64_t v)
+{
+	int shift;
+
+	/* GCD(0,v) == v; GCD(u,0) == u, GCD(0,0) == 0 */
+	if (u == 0) return v;
+	if (v == 0) return u;
+
+	/* Let shift := lg K, where K is the greatest power of 2
+	dividing both u and v. */
+	for (shift = 0; ((u | v) & 1) == 0; ++shift) {
+		u >>= 1;
+		v >>= 1;
+	}
+
+	while ((u & 1) == 0)
+		u >>= 1;
+
+	/* From here on, u is always odd. */
+	do {
+		/* remove all factors of 2 in v -- they are not common */
+		/*   note: v is not zero, so while will terminate */
+		while ((v & 1) == 0)  /* Loop X */
+			v >>= 1;
+
+		/* Now u and v are both odd. Swap if necessary so u <= v,
+		then set v = v - u (which is even). For bignums, the
+		swapping is just pointer movement, and the subtraction
+		can be done in-place. */
+		if (u > v) {
+			uint64_t t = v; v = u; u = t;
+		}  // Swap u and v.
+		v = v - u;                       // Here v >= u.
+	} while (v != 0);
+
+	/* restore common factors of 2 */
+	return u << shift;
+}
+
+
+
 struct Expression
 {
 	struct RPNStackItem
@@ -59,13 +103,22 @@ struct Expression
 		enum Type
 		{
 			None,
-			NANValue,
 			SourceValue,
 			CalculatedValue,
-			Operand
+			Operand,
+
+			NANValue,
+			Overflow,
+			BadConcat,
+			ExponentNotInteger
 		};
 
+	private:
+
 		Type type;
+
+	public:
+
 		int64_t numerator;
 		int64_t denominator;
 		EOps op;
@@ -76,32 +129,6 @@ struct Expression
 			//, numerator(-1)
 			//, denominator(-1)
 		{}
-
-		RPNStackItem(EOps op)
-			: type(Operand)
-			, op(op)
-			//, numerator(-1)
-			//, denominator(-1)
-		{}
-
-		RPNStackItem(int64_t val)
-			: type(SourceValue)
-			//, op(__EOP_COUNT)
-			, numerator(val)
-			, denominator(1)
-		{}
-
-		RPNStackItem(int64_t nominator, int64_t denominator)
-			: type(CalculatedValue)
-			//, op(__EOP_COUNT)
-			, numerator(nominator)
-			, denominator(denominator)
-		{
-			if (denominator == 0)
-			{
-				type = NANValue;
-			}
-		}
 
 		void SetOp(EOps o)
 		{
@@ -121,18 +148,16 @@ struct Expression
 
 		void SetCalculatedVal(int64_t nominator, int64_t d)
 		{
-			type = (d == 0) ? NANValue : CalculatedValue;
-			//op = __EOP_COUNT;
 			numerator = nominator;
 			denominator = d;
-		}
 
-		void Reduce()
-		{
-			assert(type == CalculatedValue || type == NANValue);
-
-			if (type == CalculatedValue)
+			if (d == 0)
 			{
+				type = NANValue;
+			}
+			else
+			{
+				type = CalculatedValue;
 
 				if (denominator < 0)
 				{
@@ -142,13 +167,46 @@ struct Expression
 
 				if (denominator != 1)
 				{
-					if (numerator % denominator == 0)
-					{
-						numerator = numerator / denominator;
-						denominator = 1;
-					}
+					//if (numerator % denominator == 0)
+					//{
+					//	numerator = numerator / denominator;
+					//	denominator = 1;
+					//}
+
+					int64_t div = gcd(numerator < 0 ? -numerator : numerator, denominator);
+
+					assert((numerator % div) == 0);
+					assert((denominator % div) == 0);
+
+					numerator /= div;
+					denominator /= div;
 				}
 			}
+		}
+
+		bool IsNumber() const
+		{
+			return type == CalculatedValue || type == SourceValue;
+		}
+
+		Type GetType() const
+		{
+			return type;
+		}
+
+		void SetErrorValue(Type t)
+		{
+			type = t;
+			assert(IsErrorValue());
+		}
+
+		bool IsErrorValue() const
+		{
+			return
+				type == NANValue ||
+				type == Overflow ||
+				type == BadConcat ||
+				type == ExponentNotInteger;
 		}
 	};
 
@@ -209,11 +267,11 @@ struct Expression
 	{
 		std::string resultStr;
 
-		if (m_result.type != RPNStackItem::None)
+		if (m_result.GetType() != RPNStackItem::None)
 		{
 			for (const RPNStackItem& item : m_vRPNExpression)
 			{
-				switch (item.type)
+				switch (item.GetType())
 				{
 				case RPNStackItem::Operand:
 					resultStr += acOpSymbols[item.op];
@@ -317,7 +375,7 @@ struct Expression
 
 		for (const RPNStackItem& item :  m_vRPNExpression)
 		{
-			switch (item.type)
+			switch (item.GetType())
 			{
 			case RPNStackItem::Operand:
 			{
@@ -326,8 +384,8 @@ struct Expression
 				stack.pop();
 				RPNStackItem val1 = stack.top();
 				stack.pop();
-				assert(val1.type == RPNStackItem::SourceValue || val1.type == RPNStackItem::CalculatedValue);
-				assert(val2.type == RPNStackItem::SourceValue || val2.type == RPNStackItem::CalculatedValue);
+				assert(val1.IsNumber());
+				assert(val2.IsNumber());
 
 				switch (item.op)
 				{
@@ -350,11 +408,10 @@ struct Expression
 					{
 						RPNStackItem& result = stack.push();
 						result.SetCalculatedVal(nominator, denominator);
-						result.Reduce();
 					}
 					else
 					{
-						stack.push().SetCalculatedVal(0, 0);
+						stack.push().SetErrorValue(RPNStackItem::Overflow);
 					}
 					break;
 				}
@@ -377,11 +434,10 @@ struct Expression
 					{
 						RPNStackItem& result = stack.push();
 						result.SetCalculatedVal(nominator, denominator);
-						result.Reduce();
 					}
 					else
 					{
-						stack.push().SetCalculatedVal(0, 0);
+						stack.push().SetErrorValue(RPNStackItem::Overflow);
 					}
 					break;
 				}
@@ -397,11 +453,10 @@ struct Expression
 					{
 						RPNStackItem& result = stack.push();
 						result.SetCalculatedVal(nominator, denominator);
-						result.Reduce();
 					}
 					else
 					{
-						stack.push().SetCalculatedVal(0, 0);
+						stack.push().SetErrorValue(RPNStackItem::Overflow);
 					}
 					break;
 				}
@@ -420,19 +475,18 @@ struct Expression
 					{
 						RPNStackItem& result = stack.push();
 						result.SetCalculatedVal(nominator, denominator);
-						result.Reduce();
 					}
 					else
 					{
-						stack.push().SetCalculatedVal(0, 0);
+						stack.push().SetErrorValue(RPNStackItem::Overflow);
 					}
 					break;
 				}
 				case EOP_CONCAT:
 				{
-					if (val1.type != RPNStackItem::SourceValue || val2.type != RPNStackItem::SourceValue)
+					if (val1.GetType() != RPNStackItem::SourceValue || val2.GetType() != RPNStackItem::SourceValue)
 					{
-						stack.push().SetCalculatedVal(0, 0);
+						stack.push().SetErrorValue(RPNStackItem::BadConcat);
 					}
 					else
 					{
@@ -460,7 +514,7 @@ struct Expression
 						}
 						else
 						{
-							stack.push().SetCalculatedVal(0, 0);
+							stack.push().SetErrorValue(RPNStackItem::Overflow);
 						}
 					}
 					break;
@@ -480,11 +534,10 @@ struct Expression
 							{
 								RPNStackItem& result = stack.push();
 								result.SetCalculatedVal(nominator, denominator);
-								result.Reduce();
 							}
 							else
 							{
-								stack.push().SetCalculatedVal(0, 0);
+								stack.push().SetErrorValue(RPNStackItem::Overflow);
 							}
 						}
 						else
@@ -498,17 +551,16 @@ struct Expression
 							{
 								RPNStackItem& result = stack.push();
 								result.SetCalculatedVal(nominator, denominator);
-								result.Reduce();
 							}
 							else
 							{
-								stack.push().SetCalculatedVal(0, 0);
+								stack.push().SetErrorValue(RPNStackItem::Overflow);
 							}
 						}
 					}
 					else
 					{
-						stack.push().SetCalculatedVal(0, 0);
+						stack.push().SetErrorValue(RPNStackItem::ExponentNotInteger);
 					}
 					break;
 				}
@@ -529,18 +581,15 @@ struct Expression
 			};
 
 			assert(stack.size() > 0);
-			if (stack.top().type == RPNStackItem::NANValue)
+			if (!stack.top().IsNumber())
 			{
 				break;
 			}
 		}
 
-		assert(stack.size() == 1 || stack.top().type == RPNStackItem::NANValue);
-		assert(
-			stack.top().type == RPNStackItem::SourceValue || 
-			stack.top().type == RPNStackItem::CalculatedValue || 
-			stack.top().type == RPNStackItem::NANValue);
-
+		assert(stack.size() > 0);
+		assert((stack.size() == 1 && stack.top().IsNumber()) || stack.top().IsErrorValue());
+		
 		m_result = stack.top();
 	}
 };
@@ -621,8 +670,19 @@ int main()
 	printf("Estimated Time: %.2f\n", fEstimatedTime);
 
 
-	const int arraySize = 100;
 	std::vector<std::pair<Expression, SpinLock>> results(arraySize);
+
+
+	std::atomic<int64_t> iIntsPositive = 0;
+	std::atomic<int64_t> iIntsNegative = 0;
+	std::atomic<int64_t> iFractionsPositive = 0;
+	std::atomic<int64_t> iFractionsNegative = 0;
+	std::atomic<int64_t> iErrorsNANValue = 0;
+	std::atomic<int64_t> iErrorsOverflow = 0;
+	std::atomic<int64_t> iErrorsBadConcat = 0;
+	std::atomic<int64_t> iErrorsExponentNotInteger = 0;
+	std::atomic<int64_t> iTotal = 0;
+
 
 
 	auto l = [&](int64_t start, int64_t end)
@@ -643,7 +703,7 @@ int main()
 			{
 				std::string epxString = e.ToRPNString();
 				printf(epxString.c_str());
-				if ((e.m_result.type == Expression::RPNStackItem::SourceValue || e.m_result.type == Expression::RPNStackItem::CalculatedValue))
+				if ((e.m_result.IsNumber()))
 				{
 					if (e.m_result.denominator == 1)
 					{
@@ -660,21 +720,81 @@ int main()
 				}
 			}
 
-
-			if ((e.m_result.type == Expression::RPNStackItem::SourceValue || e.m_result.type == Expression::RPNStackItem::CalculatedValue) && e.m_result.denominator == 1)
+			if (1)
 			{
-				if (e.m_result.numerator >= 0 && e.m_result.numerator < arraySize)
+				iTotal++;
+
+				if (e.m_result.IsNumber())
 				{
-					results[e.m_result.numerator].second.lock();
+					assert(e.m_result.denominator > 0);
 
-					if (results[e.m_result.numerator].first.m_result.type == Expression::RPNStackItem::None)
+					if (e.m_result.numerator >= 0)
 					{
-						results[e.m_result.numerator].first = e;
+						if (e.m_result.denominator == 1)
+						{
+							iIntsPositive++;
+						}
+						else
+						{
+							iFractionsPositive++;
+						}
 					}
+					else
+					{
+						if (e.m_result.denominator == 1)
+						{
+							iIntsNegative++;
+						}
+						else
+						{
+							iFractionsNegative++;
+						}
+					}
+				}
+				else
+				{
+					assert(e.m_result.IsErrorValue());
 
-					results[e.m_result.numerator].second.unlock();
+					switch (e.m_result.GetType())
+					{
+					case Expression::RPNStackItem::NANValue:
+						iErrorsNANValue++;
+						break;
+					case Expression::RPNStackItem::Overflow:
+						iErrorsOverflow++;
+						break;
+					case Expression::RPNStackItem::BadConcat:
+						iErrorsBadConcat++;
+						break;
+					case Expression::RPNStackItem::ExponentNotInteger:
+						iErrorsExponentNotInteger++;
+						break;
+					default:
+						assert(0);
+					}
 				}
 			}
+
+
+			if (s_bPrintResultArray)
+			{
+				if ((e.m_result.IsNumber()) && e.m_result.denominator == 1)
+				{
+					if (e.m_result.numerator >= 0 && e.m_result.numerator < arraySize)
+					{
+						results[e.m_result.numerator].second.lock();
+
+						if (results[e.m_result.numerator].first.m_result.GetType() == Expression::RPNStackItem::None)
+						{
+							results[e.m_result.numerator].first = e;
+						}
+
+						results[e.m_result.numerator].second.unlock();
+					}
+				}
+			}
+
+
 		}
 	};
 
@@ -708,7 +828,20 @@ int main()
 			printf("%I64d = %s\n", i, epxString.c_str());
 		}
 	}
-	
+
+	if (1)
+	{
+		printf("iIntsPositive = %I64d (%.2f)\n", (int64_t)iIntsPositive, (float)iIntsPositive / (float)iTotal);
+		printf("iIntsNegative = %I64d (%.2f)\n", (int64_t)iIntsNegative, (float)iIntsNegative / (float)iTotal);
+		printf("iFractionsPositive = %I64d (%.2f)\n", (int64_t)iFractionsPositive, (float)iFractionsPositive / (float)iTotal);
+		printf("iFractionsNegative = %I64d (%.2f)\n", (int64_t)iFractionsNegative, (float)iFractionsNegative / (float)iTotal);
+		printf("iErrorsNANValue = %I64d (%.2f)\n", (int64_t)iErrorsNANValue, (float)iErrorsNANValue / (float)iTotal);
+		printf("iErrorsOverflow = %I64d (%.2f)\n", (int64_t)iErrorsOverflow, (float)iErrorsOverflow / (float)iTotal);
+		printf("iErrorsBadConcat = %I64d (%.2f)\n", (int64_t)iErrorsBadConcat, (float)iErrorsBadConcat / (float)iTotal);
+		printf("iErrorsExponentNotInteger = %I64d (%.2f)\n", (int64_t)iErrorsExponentNotInteger, (float)iErrorsExponentNotInteger / (float)iTotal);
+
+	}
+
 
 	float time = timer.GetElapsedTime();
 	printf("Time: %.2f\n", time);
