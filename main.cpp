@@ -14,9 +14,7 @@
 
 #include <string>
 
-
-#define ENABLE_INTSAFE_SIGNED_FUNCTIONS
-#include <intsafe.h>
+#include "safemath.h"
 
 
 ////////////////////////////
@@ -27,7 +25,11 @@ const int64_t NUM_DIGITS = 9;
 bool s_bPrintAllCombinations = false;
 bool s_bPrintResultArray = true;
 bool s_bMultiThreaded = true;
-bool s_bPauseAtExit = false;
+bool s_bPauseAtExit = true;
+bool s_bDisplayStats = true;
+
+bool s_bBenchmarkMode = true;
+int64_t s_iBenchmarkModeMaxCombinations = 100000000;
 
 const int arraySize = 12000;
 
@@ -55,44 +57,7 @@ const int64_t NUM_OPS = NUM_DIGITS - 1;
 
 
 
-uint64_t gcd(uint64_t u, uint64_t v)
-{
-	int shift;
 
-	/* GCD(0,v) == v; GCD(u,0) == u, GCD(0,0) == 0 */
-	if (u == 0) return v;
-	if (v == 0) return u;
-
-	/* Let shift := lg K, where K is the greatest power of 2
-	dividing both u and v. */
-	for (shift = 0; ((u | v) & 1) == 0; ++shift) {
-		u >>= 1;
-		v >>= 1;
-	}
-
-	while ((u & 1) == 0)
-		u >>= 1;
-
-	/* From here on, u is always odd. */
-	do {
-		/* remove all factors of 2 in v -- they are not common */
-		/*   note: v is not zero, so while will terminate */
-		while ((v & 1) == 0)  /* Loop X */
-			v >>= 1;
-
-		/* Now u and v are both odd. Swap if necessary so u <= v,
-		then set v = v - u (which is even). For bignums, the
-		swapping is just pointer movement, and the subtraction
-		can be done in-place. */
-		if (u > v) {
-			uint64_t t = v; v = u; u = t;
-		}  // Swap u and v.
-		v = v - u;                       // Here v >= u.
-	} while (v != 0);
-
-	/* restore common factors of 2 */
-	return u << shift;
-}
 
 
 
@@ -334,37 +299,7 @@ struct Expression
 	RPNStack stack;
 
 
-	HRESULT ipow(int64_t base, int64_t exp, int64_t* result)
-	{
-		assert(exp >= 0);
-
-		*result = 1;
-
-		while (exp)
-		{
-			if (exp & 1)
-			{
-				//*result *= base;
-
-				HRESULT res = LongLongMult(*result, base, result);
-				if (res != S_OK)
-				{
-					return res;
-				}
-			}
-
-			exp >>= 1;
-
-			//base *= base;
-			HRESULT res = LongLongMult(base, base, &base);
-			if (res != S_OK)
-			{
-				return res;
-			}
-		}
-
-		return S_OK;
-	}
+	
 
 
 	void EvaluateRPNExpression()
@@ -394,6 +329,25 @@ struct Expression
 					//int64_t nominator = val1.numerator * val2.denominator + val2.numerator * val1.denominator;
 					//int64_t denominator = val1.denominator * val2.denominator;
 					
+#if USE_SAFE_INT					
+					int64_t nominatorPart1;
+					int64_t nominatorPart2;
+					int64_t nominator;
+					int64_t denominator;
+
+					if(safe_mul(val1.numerator, val2.denominator, nominatorPart1) &&
+					   safe_mul(val2.numerator, val1.denominator, nominatorPart2) &&
+					   safe_add(nominatorPart1, nominatorPart2, nominator) &&
+					   safe_mul(val1.denominator, val2.denominator, denominator))
+					{
+						stack.push().SetCalculatedVal(nominator, denominator);
+					}
+					else
+					{
+						stack.push().SetErrorValue(RPNStackItem::Overflow);
+					}
+
+#else
 					int64_t nominatorPart1;
 					int64_t nominatorPart2;
 					int64_t nominator;
@@ -413,6 +367,7 @@ struct Expression
 					{
 						stack.push().SetErrorValue(RPNStackItem::Overflow);
 					}
+#endif
 					break;
 				}
 				case EOP_MINUS:
@@ -420,6 +375,24 @@ struct Expression
 					//int64_t nominator = val1.numerator * val2.denominator - val2.numerator * val1.denominator;
 					//int64_t denominator = val1.denominator * val2.denominator;
 
+#if USE_SAFE_INT
+					int64_t nominatorPart1;
+					int64_t nominatorPart2;
+					int64_t nominator;
+					int64_t denominator;
+
+					if(safe_mul(val1.numerator, val2.denominator, nominatorPart1) &&
+					   safe_mul(val2.numerator, val1.denominator, nominatorPart2) &&
+					   safe_sub(nominatorPart1, nominatorPart2, nominator) &&
+					   safe_mul(val1.denominator, val2.denominator, denominator))
+					{
+						stack.push().SetCalculatedVal(nominator, denominator);
+					}
+					else
+					{
+						stack.push().SetErrorValue(RPNStackItem::Overflow);
+					}
+#else
 					int64_t nominatorPart1;
 					int64_t nominatorPart2;
 					int64_t nominator;
@@ -439,10 +412,25 @@ struct Expression
 					{
 						stack.push().SetErrorValue(RPNStackItem::Overflow);
 					}
+#endif
 					break;
 				}
 				case EOP_MUL:
 				{
+#if USE_SAFE_INT
+					int64_t nominator; // = val1.numerator * val2.numerator;
+					int64_t denominator; // = val1.denominator * val2.denominator;
+
+					if(safe_mul(val1.numerator, val2.numerator, nominator) &&
+					   safe_mul(val1.denominator, val2.denominator, denominator))
+					{
+						stack.push().SetCalculatedVal(nominator, denominator);
+					}
+					else
+					{
+						stack.push().SetErrorValue(RPNStackItem::Overflow);
+					}
+#else
 					int64_t nominator; // = val1.numerator * val2.numerator;
 					int64_t denominator; // = val1.denominator * val2.denominator;
 					
@@ -458,6 +446,7 @@ struct Expression
 					{
 						stack.push().SetErrorValue(RPNStackItem::Overflow);
 					}
+#endif
 					break;
 				}
 				case EOP_DIV:
@@ -465,6 +454,20 @@ struct Expression
 					//int64_t nominator = val1.numerator * val2.denominator;
 					//int64_t denominator = val1.denominator * val2.numerator;
 
+#if USE_SAFE_INT
+					int64_t nominator; // = val1.numerator * val2.numerator;
+					int64_t denominator; // = val1.denominator * val2.denominator;
+
+					if(safe_mul(val1.numerator, val2.denominator, nominator) &&
+					   safe_mul(val1.denominator, val2.numerator, denominator))
+					{
+						stack.push().SetCalculatedVal(nominator, denominator);
+					}
+					else
+					{
+						stack.push().SetErrorValue(RPNStackItem::Overflow);
+					}
+#else
 					int64_t nominator; // = val1.numerator * val2.numerator;
 					int64_t denominator; // = val1.denominator * val2.denominator;
 
@@ -480,6 +483,7 @@ struct Expression
 					{
 						stack.push().SetErrorValue(RPNStackItem::Overflow);
 					}
+#endif
 					break;
 				}
 				case EOP_CONCAT:
@@ -490,11 +494,34 @@ struct Expression
 					}
 					else
 					{
+#if USE_SAFE_INT
+						int64_t left = val1.numerator;
+						int64_t right = val2.numerator;
+
+						bool multOK = true;
+						int64_t mult = 10LL;
+						while ((right / mult) && multOK)
+						{
+							multOK = safe_mul(mult, 10LL, mult);
+						}
+
+						int64_t resPart;
+						int64_t numerator;
+						if(safe_mul(left, mult, resPart) &&
+						   safe_add(right, resPart, numerator))
+						{
+							stack.push().SetSourceVal(numerator);
+						}
+						else
+						{
+							stack.push().SetErrorValue(RPNStackItem::Overflow);
+						}
+#else
 						int64_t left = val1.numerator;
 						int64_t right = val2.numerator;
 
 						HRESULT res1 = S_OK;
-						int64_t mult = 10;
+						int64_t mult = 10LL;
 						while (right / mult)
 						{
 							//mult *= 10;
@@ -516,11 +543,51 @@ struct Expression
 						{
 							stack.push().SetErrorValue(RPNStackItem::Overflow);
 						}
+#endif
 					}
 					break;
 				}
 				case EOP_POW:
 				{
+#if USE_SAFE_INT
+					if (val2.denominator == 1)
+					{
+						if (val2.numerator > 0)
+						{
+							int64_t nominator;
+							int64_t denominator;
+
+							if(safe_ipow(val1.numerator, val2.numerator, nominator) &&
+							   safe_ipow(val1.denominator, val2.numerator, denominator))
+							{
+								stack.push().SetCalculatedVal(nominator, denominator);
+							}
+							else
+							{
+								stack.push().SetErrorValue(RPNStackItem::Overflow);
+							}
+						}
+						else
+						{
+							int64_t nominator;
+							int64_t denominator;
+
+							if(safe_ipow(val1.denominator, -val2.numerator, nominator) &&
+							   safe_ipow(val1.numerator, -val2.numerator, denominator))
+							{
+								stack.push().SetCalculatedVal(nominator, denominator);
+							}
+							else
+							{
+								stack.push().SetErrorValue(RPNStackItem::Overflow);
+							}
+						}
+					}
+					else
+					{
+						stack.push().SetErrorValue(RPNStackItem::ExponentNotInteger);
+					}
+#else
 					if (val2.denominator == 1)
 					{
 						if (val2.numerator > 0)
@@ -562,6 +629,7 @@ struct Expression
 					{
 						stack.push().SetErrorValue(RPNStackItem::ExponentNotInteger);
 					}
+#endif
 					break;
 				}
 
@@ -673,6 +741,7 @@ int main()
 	std::vector<std::pair<Expression, SpinLock>> results(arraySize);
 
 
+	std::atomic<int64_t> iIntsInRange = 0;
 	std::atomic<int64_t> iIntsPositive = 0;
 	std::atomic<int64_t> iIntsNegative = 0;
 	std::atomic<int64_t> iFractionsPositive = 0;
@@ -720,7 +789,7 @@ int main()
 				}
 			}
 
-			if (1)
+			if (s_bDisplayStats)
 			{
 				iTotal++;
 
@@ -733,6 +802,11 @@ int main()
 						if (e.m_result.denominator == 1)
 						{
 							iIntsPositive++;
+
+							if (e.m_result.numerator < arraySize)
+							{
+								iIntsInRange++;
+							}
 						}
 						else
 						{
@@ -798,6 +872,11 @@ int main()
 		}
 	};
 
+	if (s_bBenchmarkMode)
+	{
+		iNumTotalCombinations = iNumTotalCombinations > s_iBenchmarkModeMaxCombinations ? s_iBenchmarkModeMaxCombinations : iNumTotalCombinations;
+	}
+
 	std::vector<std::thread> vThreads;
 	int64_t numThreads = s_bMultiThreaded ? std::thread::hardware_concurrency() : 1;
 	int64_t combPerThread = iNumTotalCombinations / numThreads;
@@ -819,6 +898,7 @@ int main()
 		thread.join();
 	}
 
+	float time = timer.GetElapsedTime();
 	
 	if (s_bPrintResultArray)
 	{
@@ -829,21 +909,20 @@ int main()
 		}
 	}
 
-	if (1)
+	if (s_bDisplayStats)
 	{
-		printf("iIntsPositive = %I64d (%.2f)\n", (int64_t)iIntsPositive, (float)iIntsPositive / (float)iTotal);
-		printf("iIntsNegative = %I64d (%.2f)\n", (int64_t)iIntsNegative, (float)iIntsNegative / (float)iTotal);
-		printf("iFractionsPositive = %I64d (%.2f)\n", (int64_t)iFractionsPositive, (float)iFractionsPositive / (float)iTotal);
-		printf("iFractionsNegative = %I64d (%.2f)\n", (int64_t)iFractionsNegative, (float)iFractionsNegative / (float)iTotal);
-		printf("iErrorsNANValue = %I64d (%.2f)\n", (int64_t)iErrorsNANValue, (float)iErrorsNANValue / (float)iTotal);
-		printf("iErrorsOverflow = %I64d (%.2f)\n", (int64_t)iErrorsOverflow, (float)iErrorsOverflow / (float)iTotal);
-		printf("iErrorsBadConcat = %I64d (%.2f)\n", (int64_t)iErrorsBadConcat, (float)iErrorsBadConcat / (float)iTotal);
-		printf("iErrorsExponentNotInteger = %I64d (%.2f)\n", (int64_t)iErrorsExponentNotInteger, (float)iErrorsExponentNotInteger / (float)iTotal);
+		printf("iIntsInRange = %I64d (%.2f%%)\n", (int64_t)iIntsInRange, (float)iIntsInRange / (float)iTotal * 100.0f);
+		printf("iIntsPositive = %I64d (%.2f%%)\n", (int64_t)iIntsPositive, (float)iIntsPositive / (float)iTotal * 100.0f);
+		printf("iIntsNegative = %I64d (%.2f%%)\n", (int64_t)iIntsNegative, (float)iIntsNegative / (float)iTotal * 100.0f);
+		printf("iFractionsPositive = %I64d (%.2f%%)\n", (int64_t)iFractionsPositive, (float)iFractionsPositive / (float)iTotal * 100.0f);
+		printf("iFractionsNegative = %I64d (%.2f%%)\n", (int64_t)iFractionsNegative, (float)iFractionsNegative / (float)iTotal * 100.0f);
+		printf("iErrorsNANValue = %I64d (%.2f%%)\n", (int64_t)iErrorsNANValue, (float)iErrorsNANValue / (float)iTotal * 100.0f);
+		printf("iErrorsOverflow = %I64d (%.2f%%)\n", (int64_t)iErrorsOverflow, (float)iErrorsOverflow / (float)iTotal * 100.0f);
+		printf("iErrorsBadConcat = %I64d (%.2f%%)\n", (int64_t)iErrorsBadConcat, (float)iErrorsBadConcat / (float)iTotal * 100.0f);
+		printf("iErrorsExponentNotInteger = %I64d (%.2f%%)\n", (int64_t)iErrorsExponentNotInteger, (float)iErrorsExponentNotInteger / (float)iTotal * 100.0f);
 
 	}
-
-
-	float time = timer.GetElapsedTime();
+	
 	printf("Time: %.2f\n", time);
 	float fMCPS = (float)iNumTotalCombinations / (time*1000000.0f);
 	printf("Millions of combinations/s: %.2f\n", fMCPS);
