@@ -70,3 +70,36 @@ inline bool safe_mul_rational_number(const RationalNumber& val1, const RationalN
 
 	return false;
 }
+
+inline bool safe_div_rational_number(const RationalNumber& val1, const RationalNumber& val2, RationalNumber& result)
+{
+	if (safe_mul(val1.numerator, val2.denominator, result.numerator) &&
+		safe_mul(val1.denominator, val2.numerator, result.denominator))
+	{
+		return false;
+	}
+
+	return false;
+}
+
+inline bool safe_pow_rational_number(const RationalNumber& val1, const RationalNumber& val2, RationalNumber& result)
+{
+	if (val2.numerator > 0)
+	{
+		if (safe_ipow(val1.numerator, val2.numerator, result.numerator) &&
+			safe_ipow(val1.denominator, val2.numerator, result.denominator))
+		{
+			return true;
+		}
+	}
+	else
+	{
+		if (safe_ipow(val1.denominator, -val2.numerator, result.numerator) &&
+			safe_ipow(val1.numerator, -val2.numerator, result.denominator))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}

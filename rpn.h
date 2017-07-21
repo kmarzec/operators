@@ -123,7 +123,7 @@ public:
 
 	rpn_item& push()
 	{
-		assert(ptr < NUM_DIGITS - 1);
+		assert(ptr < STACK_SIZE - 1);
 		return m_stack[++ptr];
 	}
 
@@ -150,7 +150,7 @@ public:
 
 private:
 
-	rpn_item m_stack[NUM_DIGITS];
+	rpn_item m_stack[STACK_SIZE];
 	int64_t ptr;
 };
 
@@ -271,54 +271,14 @@ public:
 				}
 				case EOP_DIV:
 				{
-					//int64_t nominator = val1.numerator * val2.denominator;
-					//int64_t denominator = val1.denominator * val2.numerator;
-
-					int64_t nominator; // = val1.numerator * val2.numerator;
-					int64_t denominator; // = val1.denominator * val2.denominator;
-
-					if (safe_mul(val1.number.numerator, val2.number.denominator, nominator) &&
-						safe_mul(val1.number.denominator, val2.number.numerator, denominator))
+					rpn_item& result = m_stack.push();
+					if (safe_div_rational_number(val1.number, val2.number, result.number))
 					{
-						m_stack.push().SetCalculatedVal(nominator, denominator);
+						result.validate_and_reduce_calculated_value();
 					}
 					else
 					{
-						m_stack.push().SetErrorValue(rpn_item::Overflow);
-					}
-
-					break;
-				}
-				case EOP_CONCAT:
-				{
-					if (val1.GetType() != rpn_item::SourceValue || val2.GetType() != rpn_item::SourceValue)
-					{
-						m_stack.push().SetErrorValue(rpn_item::BadConcat);
-					}
-					else
-					{
-						int64_t left = val1.number.numerator;
-						int64_t right = val2.number.numerator;
-
-						bool multOK = true;
-						int64_t mult = 10LL;
-						while ((right / mult) && multOK)
-						{
-							multOK = safe_mul(mult, 10LL, mult);
-						}
-
-						int64_t resPart;
-						int64_t numerator;
-						if (safe_mul(left, mult, resPart) &&
-							safe_add(right, resPart, numerator))
-						{
-							m_stack.push().SetSourceVal(numerator);
-						}
-						else
-						{
-							m_stack.push().SetErrorValue(rpn_item::Overflow);
-						}
-
+						result.SetErrorValue(rpn_item::Overflow);
 					}
 					break;
 				}
@@ -364,6 +324,39 @@ public:
 
 					break;
 				}
+				case EOP_CONCAT:
+				{
+					if (val1.GetType() != rpn_item::SourceValue || val2.GetType() != rpn_item::SourceValue)
+					{
+						m_stack.push().SetErrorValue(rpn_item::BadConcat);
+					}
+					else
+					{
+						int64_t left = val1.number.numerator;
+						int64_t right = val2.number.numerator;
+
+						bool multOK = true;
+						int64_t mult = 10LL;
+						while ((right / mult) && multOK)
+						{
+							multOK = safe_mul(mult, 10LL, mult);
+						}
+
+						int64_t resPart;
+						int64_t numerator;
+						if (safe_mul(left, mult, resPart) &&
+							safe_add(right, resPart, numerator))
+						{
+							m_stack.push().SetSourceVal(numerator);
+						}
+						else
+						{
+							m_stack.push().SetErrorValue(rpn_item::Overflow);
+						}
+
+					}
+					break;
+				}			
 
 				default:
 					assert(0);
