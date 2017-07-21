@@ -15,7 +15,7 @@
 #include <string>
 
 #include "safemath.h"
-
+#include "tools.h"
 
 ////////////////////////////
 
@@ -34,20 +34,7 @@ int64_t s_iBenchmarkModeMaxCombinations = 100000000;
 const int arraySize = 12000;
 
 
-enum EOps
-{
-	EOP_PLUS,
-	EOP_MINUS,
-	EOP_MUL,
-	EOP_DIV,
-	EOP_POW,
-	EOP_CONCAT,
 
-	__EOP_COUNT = 6,
-};
-
-
-char acOpSymbols[] = {'+', '-', '*', '/', '^', '|'};
 
 ///////////////////////////////
 
@@ -55,653 +42,7 @@ const int64_t NUM_OP_SPOTS = NUM_DIGITS - 1;
 const int64_t NUM_OPS = NUM_DIGITS - 1;
 
 
-
-
-
-
-
-
-struct Expression
-{
-	struct RPNStackItem
-	{
-		enum Type
-		{
-			None,
-			SourceValue,
-			CalculatedValue,
-			Operand,
-
-			NANValue,
-			Overflow,
-			BadConcat,
-			ExponentNotInteger
-		};
-
-	private:
-
-		Type type;
-
-	public:
-
-		int64_t numerator;
-		int64_t denominator;
-		EOps op;
-
-		RPNStackItem()
-			: type(None)
-			//, op(__EOP_COUNT)
-			//, numerator(-1)
-			//, denominator(-1)
-		{}
-
-		void SetOp(EOps o)
-		{
-			type = Operand;
-			op = o;
-			//numerator = -1;
-			//denominator = -1;
-		}
-
-		void SetSourceVal(int64_t val)
-		{
-			type = SourceValue;
-			//op = __EOP_COUNT;
-			numerator = val;
-			denominator = 1;
-		}
-
-		void SetCalculatedVal(int64_t nominator, int64_t d)
-		{
-			numerator = nominator;
-			denominator = d;
-
-			if (d == 0)
-			{
-				type = NANValue;
-			}
-			else
-			{
-				type = CalculatedValue;
-
-				if (denominator < 0)
-				{
-					numerator = -numerator;
-					denominator = -denominator;
-				}
-
-				if (denominator != 1)
-				{
-					//if (numerator % denominator == 0)
-					//{
-					//	numerator = numerator / denominator;
-					//	denominator = 1;
-					//}
-
-					int64_t div = gcd(numerator < 0 ? -numerator : numerator, denominator);
-
-					assert((numerator % div) == 0);
-					assert((denominator % div) == 0);
-
-					numerator /= div;
-					denominator /= div;
-				}
-			}
-		}
-
-		bool IsNumber() const
-		{
-			return type == CalculatedValue || type == SourceValue;
-		}
-
-		Type GetType() const
-		{
-			return type;
-		}
-
-		void SetErrorValue(Type t)
-		{
-			type = t;
-			assert(IsErrorValue());
-		}
-
-		bool IsErrorValue() const
-		{
-			return
-				type == NANValue ||
-				type == Overflow ||
-				type == BadConcat ||
-				type == ExponentNotInteger;
-		}
-	};
-
-	EOps aiOps[NUM_OPS];
-	int64_t aiOpLocations[NUM_OP_SPOTS];
-	RPNStackItem m_vRPNExpression[NUM_DIGITS + NUM_OPS];
-	RPNStackItem m_result;
-	
-	void ResolveOps(int64_t iOpCombinationCode)
-	{
-		for (int64_t n = 0; n < NUM_OPS; ++n)
-		{
-			aiOps[n] = (EOps)(iOpCombinationCode % __EOP_COUNT);
-			iOpCombinationCode /= __EOP_COUNT;
-		}
-	}
-
-	void ResolveOpLocations(int64_t iOpLocationCode)
-	{
-		for (int64_t n = 0; n < NUM_OP_SPOTS; ++n)
-		{
-			aiOpLocations[n] = 0;
-		}
-
-		aiOpLocations[0]++;
-		for (int64_t n = 2; n <= NUM_OPS; ++n)
-		{
-			int64_t iOpLocation = iOpLocationCode%n;
-			aiOpLocations[iOpLocation]++;
-			iOpLocationCode /= n;
-		}
-	}
-
-	void GenerateRPNExpression()
-	{
-		int64_t iCharPtr = NUM_DIGITS + NUM_OPS - 1;
-		int64_t iNumDigits = 0;
-		int64_t iOpIdx = 0;
-
-		while (iCharPtr >= 0)
-		{
-			if (iNumDigits < NUM_OP_SPOTS && aiOpLocations[iNumDigits] > 0)
-			{
-				m_vRPNExpression[iCharPtr].SetOp(aiOps[iOpIdx++]);
-				aiOpLocations[iNumDigits]--;
-			}
-			else
-			{
-				m_vRPNExpression[iCharPtr].SetSourceVal(NUM_DIGITS - iNumDigits);
-				iNumDigits++;
-			}
-
-			iCharPtr--;
-		}	
-	}
-
-	std::string ToRPNString()
-	{
-		std::string resultStr;
-
-		if (m_result.GetType() != RPNStackItem::None)
-		{
-			for (const RPNStackItem& item : m_vRPNExpression)
-			{
-				switch (item.GetType())
-				{
-				case RPNStackItem::Operand:
-					resultStr += acOpSymbols[item.op];
-					break;
-				case RPNStackItem::SourceValue:
-					resultStr += std::to_string(item.numerator);
-					break;
-
-				default:
-					assert(0);
-				};
-			}
-		}
-
-		return resultStr;
-	}
-
-
-	class RPNStack
-	{
-	public:
-
-		RPNStack()
-			: ptr(-1)
-		{}
-
-		RPNStackItem& push()
-		{
-			assert(ptr < NUM_DIGITS-1);
-			return m_stack[++ptr];
-		}
-
-		void pop()
-		{
-			assert(ptr >= 0);
-			ptr--;
-		}
-
-		const RPNStackItem& top()
-		{
-			return m_stack[ptr];
-		}
-
-		int64_t size()
-		{
-			return ptr+1;
-		}
-
-		void clear()
-		{
-			ptr = -1;
-		}
-
-	private:
-
-		RPNStackItem m_stack[NUM_DIGITS];
-		int64_t ptr;
-	};
-
-	RPNStack stack;
-
-
-	
-
-
-	void EvaluateRPNExpression()
-	{
-		//std::stack<RPNStackItem> stack;
-		stack.clear();
-
-
-		for (const RPNStackItem& item :  m_vRPNExpression)
-		{
-			switch (item.GetType())
-			{
-			case RPNStackItem::Operand:
-			{
-				assert(stack.size() >= 2);
-				RPNStackItem val2 = stack.top();
-				stack.pop();
-				RPNStackItem val1 = stack.top();
-				stack.pop();
-				assert(val1.IsNumber());
-				assert(val2.IsNumber());
-
-				switch (item.op)
-				{
-				case EOP_PLUS:
-				{
-					//int64_t nominator = val1.numerator * val2.denominator + val2.numerator * val1.denominator;
-					//int64_t denominator = val1.denominator * val2.denominator;
-					
-#if USE_SAFE_INT					
-					int64_t nominatorPart1;
-					int64_t nominatorPart2;
-					int64_t nominator;
-					int64_t denominator;
-
-					if(safe_mul(val1.numerator, val2.denominator, nominatorPart1) &&
-					   safe_mul(val2.numerator, val1.denominator, nominatorPart2) &&
-					   safe_add(nominatorPart1, nominatorPart2, nominator) &&
-					   safe_mul(val1.denominator, val2.denominator, denominator))
-					{
-						stack.push().SetCalculatedVal(nominator, denominator);
-					}
-					else
-					{
-						stack.push().SetErrorValue(RPNStackItem::Overflow);
-					}
-
-#else
-					int64_t nominatorPart1;
-					int64_t nominatorPart2;
-					int64_t nominator;
-					int64_t denominator;
-
-					HRESULT res1 = LongLongMult(val1.numerator, val2.denominator, &nominatorPart1);
-					HRESULT res2 = LongLongMult(val2.numerator, val1.denominator, &nominatorPart2);
-					HRESULT res3 = LongLongAdd(nominatorPart1, nominatorPart2, &nominator);
-					HRESULT res4 = LongLongMult(val1.denominator, val2.denominator, &denominator);
-					
-					if (res1 == S_OK && res2 == S_OK && res3 == S_OK && res4 == S_OK)
-					{
-						RPNStackItem& result = stack.push();
-						result.SetCalculatedVal(nominator, denominator);
-					}
-					else
-					{
-						stack.push().SetErrorValue(RPNStackItem::Overflow);
-					}
-#endif
-					break;
-				}
-				case EOP_MINUS:
-				{
-					//int64_t nominator = val1.numerator * val2.denominator - val2.numerator * val1.denominator;
-					//int64_t denominator = val1.denominator * val2.denominator;
-
-#if USE_SAFE_INT
-					int64_t nominatorPart1;
-					int64_t nominatorPart2;
-					int64_t nominator;
-					int64_t denominator;
-
-					if(safe_mul(val1.numerator, val2.denominator, nominatorPart1) &&
-					   safe_mul(val2.numerator, val1.denominator, nominatorPart2) &&
-					   safe_sub(nominatorPart1, nominatorPart2, nominator) &&
-					   safe_mul(val1.denominator, val2.denominator, denominator))
-					{
-						stack.push().SetCalculatedVal(nominator, denominator);
-					}
-					else
-					{
-						stack.push().SetErrorValue(RPNStackItem::Overflow);
-					}
-#else
-					int64_t nominatorPart1;
-					int64_t nominatorPart2;
-					int64_t nominator;
-					int64_t denominator;
-
-					HRESULT res1 = LongLongMult(val1.numerator, val2.denominator, &nominatorPart1);
-					HRESULT res2 = LongLongMult(val2.numerator, val1.denominator, &nominatorPart2);
-					HRESULT res3 = LongLongSub(nominatorPart1, nominatorPart2, &nominator);
-					HRESULT res4 = LongLongMult(val1.denominator, val2.denominator, &denominator);
-
-					if (res1 == S_OK && res2 == S_OK && res3 == S_OK && res4 == S_OK)
-					{
-						RPNStackItem& result = stack.push();
-						result.SetCalculatedVal(nominator, denominator);
-					}
-					else
-					{
-						stack.push().SetErrorValue(RPNStackItem::Overflow);
-					}
-#endif
-					break;
-				}
-				case EOP_MUL:
-				{
-#if USE_SAFE_INT
-					int64_t nominator; // = val1.numerator * val2.numerator;
-					int64_t denominator; // = val1.denominator * val2.denominator;
-
-					if(safe_mul(val1.numerator, val2.numerator, nominator) &&
-					   safe_mul(val1.denominator, val2.denominator, denominator))
-					{
-						stack.push().SetCalculatedVal(nominator, denominator);
-					}
-					else
-					{
-						stack.push().SetErrorValue(RPNStackItem::Overflow);
-					}
-#else
-					int64_t nominator; // = val1.numerator * val2.numerator;
-					int64_t denominator; // = val1.denominator * val2.denominator;
-					
-					HRESULT res1 = LongLongMult(val1.numerator, val2.numerator, &nominator);
-					HRESULT res2 = LongLongMult(val1.denominator, val2.denominator, &denominator);
-					
-					if (res1 == S_OK && res2 == S_OK)
-					{
-						RPNStackItem& result = stack.push();
-						result.SetCalculatedVal(nominator, denominator);
-					}
-					else
-					{
-						stack.push().SetErrorValue(RPNStackItem::Overflow);
-					}
-#endif
-					break;
-				}
-				case EOP_DIV:
-				{
-					//int64_t nominator = val1.numerator * val2.denominator;
-					//int64_t denominator = val1.denominator * val2.numerator;
-
-#if USE_SAFE_INT
-					int64_t nominator; // = val1.numerator * val2.numerator;
-					int64_t denominator; // = val1.denominator * val2.denominator;
-
-					if(safe_mul(val1.numerator, val2.denominator, nominator) &&
-					   safe_mul(val1.denominator, val2.numerator, denominator))
-					{
-						stack.push().SetCalculatedVal(nominator, denominator);
-					}
-					else
-					{
-						stack.push().SetErrorValue(RPNStackItem::Overflow);
-					}
-#else
-					int64_t nominator; // = val1.numerator * val2.numerator;
-					int64_t denominator; // = val1.denominator * val2.denominator;
-
-					HRESULT res1 = LongLongMult(val1.numerator, val2.denominator, &nominator);
-					HRESULT res2 = LongLongMult(val1.denominator, val2.numerator, &denominator);
-
-					if (res1 == S_OK && res2 == S_OK)
-					{
-						RPNStackItem& result = stack.push();
-						result.SetCalculatedVal(nominator, denominator);
-					}
-					else
-					{
-						stack.push().SetErrorValue(RPNStackItem::Overflow);
-					}
-#endif
-					break;
-				}
-				case EOP_CONCAT:
-				{
-					if (val1.GetType() != RPNStackItem::SourceValue || val2.GetType() != RPNStackItem::SourceValue)
-					{
-						stack.push().SetErrorValue(RPNStackItem::BadConcat);
-					}
-					else
-					{
-#if USE_SAFE_INT
-						int64_t left = val1.numerator;
-						int64_t right = val2.numerator;
-
-						bool multOK = true;
-						int64_t mult = 10LL;
-						while ((right / mult) && multOK)
-						{
-							multOK = safe_mul(mult, 10LL, mult);
-						}
-
-						int64_t resPart;
-						int64_t numerator;
-						if(safe_mul(left, mult, resPart) &&
-						   safe_add(right, resPart, numerator))
-						{
-							stack.push().SetSourceVal(numerator);
-						}
-						else
-						{
-							stack.push().SetErrorValue(RPNStackItem::Overflow);
-						}
-#else
-						int64_t left = val1.numerator;
-						int64_t right = val2.numerator;
-
-						HRESULT res1 = S_OK;
-						int64_t mult = 10LL;
-						while (right / mult)
-						{
-							//mult *= 10;
-							res1 = LongLongMult(mult, 10LL, &mult);
-						}
-
-						//int64_t res = right + (left * mult);
-						int64_t resPart;
-						int64_t numerator;
-						HRESULT res2 = LongLongMult(left, mult, &resPart);
-						HRESULT res3 = LongLongAdd(right, resPart, &numerator);
-
-						if (res1 == S_OK && res2 == S_OK && res3 == S_OK)
-						{
-							RPNStackItem& result = stack.push();
-							result.SetSourceVal(numerator);
-						}
-						else
-						{
-							stack.push().SetErrorValue(RPNStackItem::Overflow);
-						}
-#endif
-					}
-					break;
-				}
-				case EOP_POW:
-				{
-#if USE_SAFE_INT
-					if (val2.denominator == 1)
-					{
-						if (val2.numerator > 0)
-						{
-							int64_t nominator;
-							int64_t denominator;
-
-							if(safe_ipow(val1.numerator, val2.numerator, nominator) &&
-							   safe_ipow(val1.denominator, val2.numerator, denominator))
-							{
-								stack.push().SetCalculatedVal(nominator, denominator);
-							}
-							else
-							{
-								stack.push().SetErrorValue(RPNStackItem::Overflow);
-							}
-						}
-						else
-						{
-							int64_t nominator;
-							int64_t denominator;
-
-							if(safe_ipow(val1.denominator, -val2.numerator, nominator) &&
-							   safe_ipow(val1.numerator, -val2.numerator, denominator))
-							{
-								stack.push().SetCalculatedVal(nominator, denominator);
-							}
-							else
-							{
-								stack.push().SetErrorValue(RPNStackItem::Overflow);
-							}
-						}
-					}
-					else
-					{
-						stack.push().SetErrorValue(RPNStackItem::ExponentNotInteger);
-					}
-#else
-					if (val2.denominator == 1)
-					{
-						if (val2.numerator > 0)
-						{
-							int64_t nominator;
-							HRESULT res1 = ipow(val1.numerator, val2.numerator, &nominator);
-							int64_t denominator;
-							HRESULT res2 = ipow(val1.denominator, val2.numerator, &denominator);
-
-							if (res1 == S_OK && res2 == S_OK)
-							{
-								RPNStackItem& result = stack.push();
-								result.SetCalculatedVal(nominator, denominator);
-							}
-							else
-							{
-								stack.push().SetErrorValue(RPNStackItem::Overflow);
-							}
-						}
-						else
-						{
-							int64_t nominator;
-							HRESULT res1 = ipow(val1.denominator, -val2.numerator, &nominator);
-							int64_t denominator;
-							HRESULT res2 = ipow(val1.numerator, -val2.numerator, &denominator);
-
-							if (res1 == S_OK && res2 == S_OK)
-							{
-								RPNStackItem& result = stack.push();
-								result.SetCalculatedVal(nominator, denominator);
-							}
-							else
-							{
-								stack.push().SetErrorValue(RPNStackItem::Overflow);
-							}
-						}
-					}
-					else
-					{
-						stack.push().SetErrorValue(RPNStackItem::ExponentNotInteger);
-					}
-#endif
-					break;
-				}
-
-				default:
-					assert(0);
-				};
-
-				break;
-			}
-
-			case RPNStackItem::SourceValue:
-				stack.push().SetSourceVal(item.numerator);
-				break;
-
-			default:
-				assert(0);
-			};
-
-			assert(stack.size() > 0);
-			if (!stack.top().IsNumber())
-			{
-				break;
-			}
-		}
-
-		assert(stack.size() > 0);
-		assert((stack.size() == 1 && stack.top().IsNumber()) || stack.top().IsErrorValue());
-		
-		m_result = stack.top();
-	}
-};
-
-
-
-class Timer
-{
-public:
-	Timer()
-	{
-		m_start = clock();
-	}
-
-	float GetElapsedTime()
-	{
-		clock_t t = clock() - m_start;
-		return (float)t / (float)CLOCKS_PER_SEC;
-	}
-
-private:
-	clock_t m_start;
-};
-
-
-
-class SpinLock 
-{
-	std::atomic_flag locked = ATOMIC_FLAG_INIT;
-
-public:
-	void lock() 
-	{
-		while (locked.test_and_set(std::memory_order_acquire)) { ; }
-	}
-
-	void unlock() 
-	{
-		locked.clear(std::memory_order_release);
-	}
-};
-
-
-
+#include "expression.h"
 
 
 int main()
@@ -766,21 +107,21 @@ int main()
 			e.ResolveOps(iOpCombinationCode);
 			e.ResolveOpLocations(iOpLocationCode);
 			e.GenerateRPNExpression();
-			e.EvaluateRPNExpression();
+			e.evaluate();
 
 			if(s_bPrintAllCombinations)
 			{
-				std::string epxString = e.ToRPNString();
+				std::string epxString = e.to_string();
 				printf(epxString.c_str());
-				if ((e.m_result.IsNumber()))
+				if ((e.get_result().IsNumber()))
 				{
-					if (e.m_result.denominator == 1)
+					if (e.get_result().number.denominator == 1)
 					{
-						printf(" = %I64d\n", e.m_result.numerator);
+						printf(" = %I64d\n", e.get_result().number.numerator);
 					}
 					else
 					{
-						printf(" = %I64d/%I64d\n", e.m_result.numerator, e.m_result.denominator);
+						printf(" = %I64d/%I64d\n", e.get_result().number.numerator, e.get_result().number.denominator);
 					}
 				}
 				else
@@ -793,17 +134,17 @@ int main()
 			{
 				iTotal++;
 
-				if (e.m_result.IsNumber())
+				if (e.get_result().IsNumber())
 				{
-					assert(e.m_result.denominator > 0);
+					assert(e.get_result().denominator > 0);
 
-					if (e.m_result.numerator >= 0)
+					if (e.get_result().number.numerator >= 0)
 					{
-						if (e.m_result.denominator == 1)
+						if (e.get_result().number.denominator == 1)
 						{
 							iIntsPositive++;
 
-							if (e.m_result.numerator < arraySize)
+							if (e.get_result().number.numerator < arraySize)
 							{
 								iIntsInRange++;
 							}
@@ -815,7 +156,7 @@ int main()
 					}
 					else
 					{
-						if (e.m_result.denominator == 1)
+						if (e.get_result().number.denominator == 1)
 						{
 							iIntsNegative++;
 						}
@@ -827,20 +168,20 @@ int main()
 				}
 				else
 				{
-					assert(e.m_result.IsErrorValue());
+					assert(e.get_result().IsErrorValue());
 
-					switch (e.m_result.GetType())
+					switch (e.get_result().GetType())
 					{
-					case Expression::RPNStackItem::NANValue:
+					case rpn_item::NANValue:
 						iErrorsNANValue++;
 						break;
-					case Expression::RPNStackItem::Overflow:
+					case rpn_item::Overflow:
 						iErrorsOverflow++;
 						break;
-					case Expression::RPNStackItem::BadConcat:
+					case rpn_item::BadConcat:
 						iErrorsBadConcat++;
 						break;
-					case Expression::RPNStackItem::ExponentNotInteger:
+					case rpn_item::ExponentNotInteger:
 						iErrorsExponentNotInteger++;
 						break;
 					default:
@@ -852,18 +193,18 @@ int main()
 
 			if (s_bPrintResultArray)
 			{
-				if ((e.m_result.IsNumber()) && e.m_result.denominator == 1)
+				if ((e.get_result().IsNumber()) && e.get_result().number.denominator == 1)
 				{
-					if (e.m_result.numerator >= 0 && e.m_result.numerator < arraySize)
+					if (e.get_result().number.numerator >= 0 && e.get_result().number.numerator < arraySize)
 					{
-						results[e.m_result.numerator].second.lock();
+						results[e.get_result().number.numerator].second.lock();
 
-						if (results[e.m_result.numerator].first.m_result.GetType() == Expression::RPNStackItem::None)
+						if (results[e.get_result().number.numerator].first.get_result().GetType() == rpn_item::None)
 						{
-							results[e.m_result.numerator].first = e;
+							results[e.get_result().number.numerator].first = e;
 						}
 
-						results[e.m_result.numerator].second.unlock();
+						results[e.get_result().number.numerator].second.unlock();
 					}
 				}
 			}
@@ -904,7 +245,7 @@ int main()
 	{
 		for (int64_t i = 0; i < arraySize; ++i)
 		{
-			std::string epxString = results[i].first.ToRPNString();
+			std::string epxString = results[i].first.to_string();
 			printf("%I64d = %s\n", i, epxString.c_str());
 		}
 	}

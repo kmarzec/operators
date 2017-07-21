@@ -5,8 +5,6 @@
 #include <intsafe.h>
 
 
-#define USE_SAFE_INT 1
-
 class safe_int64_t
 {
 public:
@@ -140,7 +138,6 @@ inline uint64_t gcd(uint64_t u, uint64_t v)
 	return u << shift;
 }
 
-#if USE_SAFE_INT
 
 inline bool safe_ipow(int64_t base, int64_t exp, int64_t& result)
 {
@@ -168,39 +165,3 @@ inline bool safe_ipow(int64_t base, int64_t exp, int64_t& result)
 
 	return true;
 }
-
-#else
-
-inline HRESULT ipow(int64_t base, int64_t exp, int64_t* result)
-{
-	assert(exp >= 0);
-
-	*result = 1;
-
-	while (exp)
-	{
-		if (exp & 1)
-		{
-			//*result *= base;
-
-			HRESULT res = LongLongMult(*result, base, result);
-			if (res != S_OK)
-			{
-				return res;
-			}
-		}
-
-		exp >>= 1;
-
-		//base *= base;
-		HRESULT res = LongLongMult(base, base, &base);
-		if (res != S_OK)
-		{
-			return res;
-		}
-	}
-
-	return S_OK;
-}
-
-#endif
