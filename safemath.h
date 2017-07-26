@@ -4,100 +4,32 @@
 #define ENABLE_INTSAFE_SIGNED_FUNCTIONS
 #include <intsafe.h>
 
-
-class safe_int64_t
-{
-public:
-	safe_int64_t()
-		: m_val(0)
-		, m_overflow(false)
-	{}
-
-	safe_int64_t(const int64_t& val)
-		: m_val(val)
-		, m_overflow(false)
-	{}
-
-	inline bool IsValid()
-	{
-		return !m_overflow;
-	}
-
-	inline operator int64_t()
-	{
-		return m_val;
-	}
-
-	inline safe_int64_t operator + (const safe_int64_t& rhs)
-	{
-		safe_int64_t sum;
-
-		if (m_overflow || rhs.m_overflow)
-		{
-			sum.m_overflow = true;
-		}
-		else
-		{
-			sum.m_overflow = (LongLongAdd(m_val, rhs.m_val, &sum.m_val) != S_OK);
-		}
-
-		return sum;
-	}
-
-	inline safe_int64_t operator - (const safe_int64_t& rhs)
-	{
-		safe_int64_t sum;
-
-		if (m_overflow || rhs.m_overflow)
-		{
-			sum.m_overflow = true;
-		}
-		else
-		{
-			sum.m_overflow = (LongLongSub(m_val, rhs.m_val, &sum.m_val) != S_OK);
-		}
-
-		return sum;
-	}
-
-	inline safe_int64_t operator * (const safe_int64_t& rhs)
-	{
-		safe_int64_t sum;
-
-		if (m_overflow || rhs.m_overflow)
-		{
-			sum.m_overflow = true;
-		}
-		else
-		{
-			sum.m_overflow = (LongLongMult(m_val, rhs.m_val, &sum.m_val) != S_OK);
-		}
-
-		return sum;
-	}
-
-private:
-	int64_t m_val;
-	bool m_overflow;
-};
-
-
+//----------------------------------------------------------------------------------------------------------------------
+//
 
 inline bool safe_add(int64_t v1, int64_t v2, int64_t& result)
 {
 	return (LongLongAdd(v1, v2, &result) == S_OK);
 }
 
+//----------------------------------------------------------------------------------------------------------------------
+//
+
 inline bool safe_sub(int64_t v1, int64_t v2, int64_t& result)
 {
 	return (LongLongSub(v1, v2, &result) == S_OK);
 }
+
+//----------------------------------------------------------------------------------------------------------------------
+//
 
 inline bool safe_mul(int64_t v1, int64_t v2, int64_t& result)
 {
 	return (LongLongMult(v1, v2, &result) == S_OK);
 }
 
+//----------------------------------------------------------------------------------------------------------------------
+//
 
 inline uint64_t gcd(uint64_t u, uint64_t v)
 {
@@ -138,6 +70,8 @@ inline uint64_t gcd(uint64_t u, uint64_t v)
 	return u << shift;
 }
 
+//----------------------------------------------------------------------------------------------------------------------
+//
 
 inline bool safe_ipow(int64_t base, int64_t exp, int64_t& result)
 {
@@ -165,3 +99,6 @@ inline bool safe_ipow(int64_t base, int64_t exp, int64_t& result)
 
 	return true;
 }
+
+//----------------------------------------------------------------------------------------------------------------------
+//

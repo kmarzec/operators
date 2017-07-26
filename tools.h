@@ -1,14 +1,14 @@
 #pragma once
 
-class Timer
+class timer
 {
 public:
-	Timer()
+	timer()
 	{
 		m_start = clock();
 	}
 
-	float GetElapsedTime()
+	float get_elapsed_time()
 	{
 		clock_t t = clock() - m_start;
 		return (float)t / (float)CLOCKS_PER_SEC;
@@ -20,7 +20,7 @@ private:
 
 
 
-class SpinLock
+class spin_lock
 {
 	std::atomic_flag locked = ATOMIC_FLAG_INIT;
 

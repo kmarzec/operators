@@ -19,11 +19,10 @@
 
 ////////////////////////////
 
-const int64_t NUM_DIGITS = 9;
 
 
 bool s_bPrintAllCombinations = false;
-bool s_bPrintResultArray = true;
+bool s_bPrintResultArray = false;
 bool s_bMultiThreaded = true;
 bool s_bPauseAtExit = true;
 bool s_bDisplayStats = true;
@@ -38,6 +37,7 @@ const int arraySize = 12000;
 
 ///////////////////////////////
 
+const int64_t NUM_DIGITS = 9;
 const int64_t NUM_OP_SPOTS = NUM_DIGITS - 1;
 const int64_t NUM_OPS = NUM_DIGITS - 1;
 
@@ -47,7 +47,7 @@ const int64_t NUM_OPS = NUM_DIGITS - 1;
 
 int main()
 {
-	Timer timer;
+	timer timer;
 
 	int64_t iNumOpLocationCombinations = 1;
 	for (int64_t j = 1; j <= NUM_OP_SPOTS; ++j)
@@ -59,7 +59,7 @@ int main()
 	int64_t iNumOpCombinations = 1;
 	for (int64_t j = 1; j <= NUM_OPS; ++j)
 	{
-		iNumOpCombinations *= __EOP_COUNT;
+		iNumOpCombinations *= static_cast<rpn_operation_type>(rpn_operation::__Count);
 	}
 
 
@@ -79,7 +79,7 @@ int main()
 	printf("Estimated Time: %.2f\n", fEstimatedTime);
 
 
-	std::vector<std::pair<Expression, SpinLock>> results(arraySize);
+	std::vector<std::pair<expression, spin_lock>> results(arraySize);
 
 
 	std::atomic<int64_t> iIntsInRange = 0;
@@ -97,23 +97,25 @@ int main()
 
 	auto l = [&](int64_t start, int64_t end)
 	{
-		Expression e;
+		expression e;
 
 		for (int64_t i = start; i < end; ++i)
 		{
 			int64_t iOpCombinationCode = i % iNumOpCombinations;
 			int64_t iOpLocationCode = i / iNumOpCombinations;
 
-			e.ResolveOps(iOpCombinationCode);
-			e.ResolveOpLocations(iOpLocationCode);
-			e.GenerateRPNExpression();
+			e.resolve_operations(iOpCombinationCode);
+			e.resolve_operation_locations(iOpLocationCode);
+			e.generate_rpn_expression();
 			e.evaluate();
 
 			if(s_bPrintAllCombinations)
 			{
+                // TOFIX printf from threads
+
 				std::string epxString = e.to_string();
 				printf(epxString.c_str());
-				if ((e.get_result().IsNumber()))
+				if ((e.get_result().is_number()))
 				{
 					if (e.get_result().number.denominator == 1)
 					{
@@ -134,7 +136,7 @@ int main()
 			{
 				iTotal++;
 
-				if (e.get_result().IsNumber())
+				if (e.get_result().is_number())
 				{
 					assert(e.get_result().denominator > 0);
 
@@ -168,20 +170,20 @@ int main()
 				}
 				else
 				{
-					assert(e.get_result().IsErrorValue());
+					assert(e.get_result().is_error_value());
 
-					switch (e.get_result().GetType())
+					switch (e.get_result().get_type())
 					{
-					case rpn_item::NANValue:
+					case item_type::NANValue:
 						iErrorsNANValue++;
 						break;
-					case rpn_item::Overflow:
+					case item_type::Overflow:
 						iErrorsOverflow++;
 						break;
-					case rpn_item::BadConcat:
+					case item_type::BadConcat:
 						iErrorsBadConcat++;
 						break;
-					case rpn_item::ExponentNotInteger:
+					case item_type::ExponentNotInteger:
 						iErrorsExponentNotInteger++;
 						break;
 					default:
@@ -193,13 +195,13 @@ int main()
 
 			if (s_bPrintResultArray)
 			{
-				if ((e.get_result().IsNumber()) && e.get_result().number.denominator == 1)
+				if ((e.get_result().is_number()) && e.get_result().number.denominator == 1)
 				{
 					if (e.get_result().number.numerator >= 0 && e.get_result().number.numerator < arraySize)
 					{
 						results[e.get_result().number.numerator].second.lock();
 
-						if (results[e.get_result().number.numerator].first.get_result().GetType() == rpn_item::None)
+						if (results[e.get_result().number.numerator].first.get_result().get_type() == item_type::None)
 						{
 							results[e.get_result().number.numerator].first = e;
 						}
@@ -239,7 +241,7 @@ int main()
 		thread.join();
 	}
 
-	float time = timer.GetElapsedTime();
+	float time = timer.get_elapsed_time();
 	
 	if (s_bPrintResultArray)
 	{
