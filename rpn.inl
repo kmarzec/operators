@@ -143,7 +143,7 @@ inline void rpn_expression<EXP_LENGHT, STACK_SIZE>::evaluate()
 		{
 		case item_type::Operand:
 		{
-			assert(stack.size() >= 2);
+			assert(m_stack.size() >= 2);
 			rpn_item val2 = m_stack.top();
 			m_stack.pop();
 			rpn_item val1 = m_stack.top();
@@ -275,7 +275,7 @@ inline void rpn_expression<EXP_LENGHT, STACK_SIZE>::evaluate()
 			assert(0);
 		};
 
-		assert(stack.size() > 0);
+		assert(m_stack.size() > 0);
 		if (!m_stack.top().is_number())
 		{
 			break;
@@ -283,7 +283,7 @@ inline void rpn_expression<EXP_LENGHT, STACK_SIZE>::evaluate()
 	}
 
 	assert(m_stack.size() > 0);
-	assert((m_stack.size() == 1 && stack.top().is_number()) || m_stack.top().is_error_value());
+	assert((m_stack.size() == 1 && m_stack.top().is_number()) || m_stack.top().is_error_value());
 }
 
 //----------------------------------------------------------------------------------------------------------------------
