@@ -53,6 +53,12 @@ public:
             {
                 m_kernel = clCreateKernel(m_program, m_kernelFunctionName.c_str(), NULL);
             }
+            else
+            {
+                std::array<char, 1024> buf;
+                clGetProgramBuildInfo(m_program, deviceId, CL_PROGRAM_BUILD_LOG, buf.size(), buf.data(), nullptr);
+                printf("Kernel Build failed:\n%s\n", buf.data());
+            }
         }
     }
 
@@ -67,20 +73,7 @@ public:
     {
         if (m_context && m_program && m_kernel)
         {
-            cl_uint argIdx = 0;
-            for (opencl_kernel_arg_ptr& arg : m_args)
-            {
-                switch (arg->get_type())
-                {
-                case opencl_kernel_arg::type_t::buffer:
-                    opencl_kernel_arg_buffer* bufferArg = (opencl_kernel_arg_buffer*)arg.get();
-                    cl_mem memBuffer = bufferArg->get_buffer()->get_cl_buffer();
-                    clSetKernelArg(m_kernel, argIdx, sizeof(cl_mem), &memBuffer);
-                    break;
-                }
-
-                argIdx++;
-            }
+            set_kernel_args();
 
             cl_command_queue queue = m_context->get_cl_queue();
             if (queue)
@@ -90,9 +83,51 @@ public:
         }
     }
 
+    void enqeue_execute(cl_uint workDimension, size_t localSize, size_t globalSize)
+    {
+        if (m_context && m_program && m_kernel)
+        {
+            set_kernel_args();
+
+            cl_command_queue queue = m_context->get_cl_queue();
+            if (queue)
+            {
+                clEnqueueNDRangeKernel(
+                    queue, 
+                    m_kernel, 
+                    workDimension,
+                    nullptr,         // offset
+                    &globalSize,
+                    &localSize,
+                    0, nullptr, nullptr
+                );
+            }
+        }
+    }
+
     opencl_kernel_arg_ptr get_agr(size_t agrIdx)
     {
         return m_args[agrIdx];
+    }
+
+private:
+
+    void set_kernel_args()
+    {
+        cl_uint argIdx = 0;
+        for (opencl_kernel_arg_ptr& arg : m_args)
+        {
+            switch (arg->get_type())
+            {
+            case opencl_kernel_arg::type_t::buffer:
+                opencl_kernel_arg_buffer* bufferArg = (opencl_kernel_arg_buffer*)arg.get();
+                cl_mem memBuffer = bufferArg->get_buffer()->get_cl_buffer();
+                clSetKernelArg(m_kernel, argIdx, sizeof(cl_mem), &memBuffer);
+                break;
+            }
+
+            argIdx++;
+        }
     }
 
 private:

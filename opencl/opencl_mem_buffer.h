@@ -37,24 +37,41 @@ public:
 
     void enqueue_read()
     {
-        if (m_context && m_size)
+        if (m_context && m_deviceBuffer)
         {
-            if (!m_buffer)
-            {
-                m_buffer.reset(new uint8_t[m_size]);
-            }
-
+            uint8_t* buffer = get_host_buffer();
             cl_command_queue queue = m_context->get_cl_queue();
-            if (queue)
+            if (queue && buffer)
             {
                 clEnqueueReadBuffer(queue, m_deviceBuffer, CL_TRUE, 0, m_size, m_buffer.get(), 0, nullptr, nullptr);
             }
         }
     }
 
+    void enqueue_write()
+    {
+        if (m_context && m_deviceBuffer)
+        {
+            uint8_t* buffer = get_host_buffer();
+            cl_command_queue queue = m_context->get_cl_queue();
+            if (queue && buffer)
+            {
+                clEnqueueWriteBuffer(queue, m_deviceBuffer, CL_TRUE, 0, m_size, buffer, 0, nullptr, nullptr);
+            }
+        }
+    }
+
     cl_mem get_cl_buffer() { return m_deviceBuffer; }
 
-    uint8_t* get_host_buffer() { return m_buffer.get(); }
+    uint8_t* get_host_buffer() 
+    {
+        if (!m_buffer && m_size)
+        {
+            m_buffer.reset(new uint8_t[m_size]);
+        }
+
+        return m_buffer.get(); 
+    }
 
 private:
     opencl_context_ptr m_context;

@@ -25,7 +25,7 @@ public:
 
     expression_traverser(const config_t& config)
         : m_config(config)
-        , results(m_config.arraySize)
+        , results(config.arraySize)
     {}
 
 

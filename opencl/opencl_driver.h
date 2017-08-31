@@ -5,7 +5,9 @@
 #include <memory>
 #include "opencl_context.h"
 
-
+#define CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS          0x1003
+#define CL_DEVICE_MAX_WORK_GROUP_SIZE               0x1004
+#define CL_DEVICE_MAX_WORK_ITEM_SIZES               0x1005
 class opencl_driver
 {
 public:
@@ -18,6 +20,9 @@ public:
         std::string softwareVersion;
         std::string languageVersion;
         cl_uint computeUnitsCount;
+        cl_uint maxWorkItemDimensions;
+        cl_uint maxWorkGroupSize;
+        cl_uint maxWorkItemSizes;
     };
 
     struct platform
@@ -65,6 +70,10 @@ public:
                 devices.back().softwareVersion = GetDeviceStringInfo(deviceId, CL_DRIVER_VERSION);
                 devices.back().languageVersion = GetDeviceStringInfo(deviceId, CL_DEVICE_OPENCL_C_VERSION);
                 devices.back().computeUnitsCount = GetDeviceIntInfo(deviceId, CL_DEVICE_MAX_COMPUTE_UNITS);
+                devices.back().maxWorkItemDimensions = GetDeviceIntInfo(deviceId, CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS);
+                devices.back().maxWorkGroupSize = GetDeviceIntInfo(deviceId, CL_DEVICE_MAX_WORK_GROUP_SIZE);
+                devices.back().maxWorkItemSizes = GetDeviceIntInfo(deviceId, CL_DEVICE_MAX_WORK_ITEM_SIZES);
+
             }
         }
     }
