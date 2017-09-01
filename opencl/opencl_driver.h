@@ -21,8 +21,8 @@ public:
         std::string languageVersion;
         cl_uint computeUnitsCount;
         cl_uint maxWorkItemDimensions;
-        cl_uint maxWorkGroupSize;
-        cl_uint maxWorkItemSizes;
+		size_t maxWorkGroupSize;
+		size_t maxWorkItemSizes[3];
     };
 
     struct platform
@@ -71,9 +71,8 @@ public:
                 devices.back().languageVersion = GetDeviceStringInfo(deviceId, CL_DEVICE_OPENCL_C_VERSION);
                 devices.back().computeUnitsCount = GetDeviceIntInfo(deviceId, CL_DEVICE_MAX_COMPUTE_UNITS);
                 devices.back().maxWorkItemDimensions = GetDeviceIntInfo(deviceId, CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS);
-                devices.back().maxWorkGroupSize = GetDeviceIntInfo(deviceId, CL_DEVICE_MAX_WORK_GROUP_SIZE);
-                devices.back().maxWorkItemSizes = GetDeviceIntInfo(deviceId, CL_DEVICE_MAX_WORK_ITEM_SIZES);
-
+                devices.back().maxWorkGroupSize = GetDeviceSizeInfo(deviceId, CL_DEVICE_MAX_WORK_GROUP_SIZE);
+				GetDeviceSizeArrayInfo(deviceId, CL_DEVICE_MAX_WORK_ITEM_SIZES, devices.back().maxWorkItemSizes, 3);
             }
         }
     }
@@ -110,6 +109,18 @@ private:
         clGetDeviceInfo(device, paramaterName, sizeof(value), &value, nullptr);
         return value;
     }
+
+	size_t GetDeviceSizeInfo(cl_device_id device, cl_device_info paramaterName)
+	{
+		size_t value;
+		clGetDeviceInfo(device, paramaterName, sizeof(value), &value, nullptr);
+		return value;
+	}
+
+	void GetDeviceSizeArrayInfo(cl_device_id device, cl_device_info paramaterName, size_t* result, int numEntries)
+	{
+		clGetDeviceInfo(device, paramaterName, sizeof(size_t)*numEntries, result, nullptr);
+	}
 
 private:
     std::vector<platform> m_platforms;
