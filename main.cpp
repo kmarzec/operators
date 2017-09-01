@@ -28,46 +28,6 @@
 
 const bool g_pauseAtExit = true;
 
-/*
-const char* programText =
-R"(   
-    __kernel void hello(__global int* ops)
-    {
-        int NUMBER_OF_DIGITS = 9;
-        int m_number_of_operator_locatations = NUMBER_OF_DIGITS - 1;
-        int m_number_of_operators = NUMBER_OF_DIGITS - 1;
-
-                        
-
-
-                        int iNumOpLocationCombinations = 40320;
-            int iNumOpCombinations = 1679616;
-int iNumTotalCombinations = 67722117120;
-
-int rpn_operation__Count = 6;
-
-        /////////////////////
-
-           int id = get_global_id(0);
-
-
-            long iOpCombinationCode = id % iNumOpCombinations;
-             long iOpLocationCode = id / iNumOpCombinations;
-
-
-
-            for (int n = 0; n < m_number_of_operators; ++n)
-	        {
-		        ops[m_number_of_operators*id + n] = iOpCombinationCode % rpn_operation__Count;
-		        iOpCombinationCode /= rpn_operation__Count;
-	        }
-
-
-	   //int id = get_global_id(0);
-       // v3[id] = v1[id] + v2[id]; 
-    }
-)";
-*/
 
 void search_cpu()
 {
@@ -90,42 +50,12 @@ void search_cpu()
 
 void search_opencl()
 {
-    /*
-    const size_t dataSize = 5;
-    const size_t dataSizeBytes = dataSize * sizeof(float);
-    float v1[] = { 1, 2, 3, 4, 5 };
-    float v2[] = { 6, 7, 8, 9, 10 };
+    std::string programText((std::istreambuf_iterator<char>(std::ifstream("../program.cl"))), std::istreambuf_iterator<char>());
 
 
-    opencl_driver driver;
-    opencl_context_ptr context = driver.create_context();
+    timer timer;
 
-    opencl_kernel kernel(context);
-    kernel.build(programText, "hello");
-
-    opencl_mem_buffer_ptr bv1 = kernel.add_arg_buffer(CL_MEM_READ_ONLY, dataSizeBytes);
-    memcpy(bv1->get_host_buffer(), v1, sizeof(v1));
-    bv1->enqueue_write();
-
-    opencl_mem_buffer_ptr bv2 = kernel.add_arg_buffer(CL_MEM_READ_ONLY, dataSizeBytes);
-    memcpy(bv2->get_host_buffer(), v2, sizeof(v2));
-    bv2->enqueue_write();
-
-    opencl_mem_buffer_ptr bv3 = kernel.add_arg_buffer(CL_MEM_WRITE_ONLY, dataSizeBytes);
-
-    kernel.enqeue_execute(1, 5, 5);
-
-    bv3->enqueue_read();
-
-    float* v3 = (float*)bv3->get_host_buffer();
-
-    for (int i = 0; i < dataSize; ++i)
-    {
-        printf("%.2f\n", v3[i]);
-    }*/
-
-
-    const size_t dataSize = 32;
+    const size_t dataSize = 1000 * 1024;
 
     const size_t numOps = 8;
     const size_t opsSizeBytes = dataSize * (sizeof(cl_int) * numOps);
@@ -138,14 +68,13 @@ void search_opencl()
     opencl_context_ptr context = driver.create_context();
 
     opencl_kernel kernel(context);
-    std::string programText((std::istreambuf_iterator<char>(std::ifstream("../program.cl"))), std::istreambuf_iterator<char>());
     kernel.build(programText, "hello");
 
     opencl_mem_buffer_ptr opsbuff = kernel.add_arg_buffer(CL_MEM_WRITE_ONLY, opsSizeBytes);
     opencl_mem_buffer_ptr opslocationsbuff = kernel.add_arg_buffer(CL_MEM_WRITE_ONLY, opsLocationsSizeBytes);
 
 
-    kernel.enqeue_execute(1, dataSize, dataSize);
+    kernel.enqeue_execute(1, 1024, dataSize);
     opsbuff->enqueue_read();
     opslocationsbuff->enqueue_read();
 
@@ -154,6 +83,12 @@ void search_opencl()
     cl_int* opsloc = (cl_int*)opslocationsbuff->get_host_buffer();
 
 
+
+    float time = timer.get_elapsed_time();
+
+    
+
+/*
     for (int i = 0; i < dataSize; ++i)
     {
         for (int j = 0; j < numOps; ++j)
@@ -170,6 +105,11 @@ void search_opencl()
 
         printf("\n");
     }
+    */
+
+    printf("Time: %.2f\n", time);
+    float fMCPS = (float)dataSize / (time*1000000.0f);
+    printf("Millions of combinations/s: %.2f\n", fMCPS);
 }
 
 

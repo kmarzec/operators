@@ -135,7 +135,7 @@ public:
             }
             else
             {
-                std::array<char, 1024> buf;
+                std::array<char, 4096> buf;
                 clGetProgramBuildInfo(m_program, deviceId, CL_PROGRAM_BUILD_LOG, buf.size(), buf.data(), nullptr);
                 printf("Kernel Build failed:\n%s\n", buf.data());
             }
