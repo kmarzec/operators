@@ -38,7 +38,7 @@ void search_cpu()
     config.printStats = true;
 
     config.benchmarkMode = true;
-    config.benchmarkModeMaxCombinations = 500000000;
+    config.benchmarkModeMaxCombinations = 5000000;
 
     config.generateResultArray = false;
     config.arraySize = 100;
@@ -55,13 +55,8 @@ void search_opencl()
 
     timer timer;
 
-    const size_t dataSize = 1000 * 1024;
-
-    const size_t numOps = 8;
-    const size_t opsSizeBytes = dataSize * (sizeof(cl_int) * numOps);
-
-    const size_t numOpLocations = 8;
-    const size_t opsLocationsSizeBytes = dataSize * (sizeof(cl_int) * numOpLocations);
+    const size_t dataSize = 1394;
+    const size_t resultDataSizeBytes = dataSize * sizeof(cl_long);
 
 
     opencl_driver driver;
@@ -70,17 +65,12 @@ void search_opencl()
     opencl_kernel kernel(context);
     kernel.build(programText, "hello");
 
-    opencl_mem_buffer_ptr opsbuff = kernel.add_arg_buffer(CL_MEM_WRITE_ONLY, opsSizeBytes);
-    opencl_mem_buffer_ptr opslocationsbuff = kernel.add_arg_buffer(CL_MEM_WRITE_ONLY, opsLocationsSizeBytes);
+    opencl_mem_buffer_ptr resultBuff = kernel.add_arg_buffer(CL_MEM_WRITE_ONLY, resultDataSizeBytes);
 
 
-    kernel.enqeue_execute(1, 1024, dataSize);
-    opsbuff->enqueue_read();
-    opslocationsbuff->enqueue_read();
-
-
-    cl_int* ops = (cl_int*)opsbuff->get_host_buffer();
-    cl_int* opsloc = (cl_int*)opslocationsbuff->get_host_buffer();
+    kernel.enqeue_execute(1, (dataSize)/2, dataSize);
+    resultBuff->enqueue_read();
+    cl_long* result = (cl_long*)resultBuff->get_host_buffer();
 
 
 
@@ -115,6 +105,14 @@ void search_opencl()
 
 int main()
 {
+    //int64_t r = 0;
+    //safe_ipow(2, 117, r);
+
+    //expression<9>::init();
+    //expression<9> e;
+    //e.resolve_expression(1394);
+    //e.evaluate();
+
     
     search_opencl();
 

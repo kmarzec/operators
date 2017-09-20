@@ -128,16 +128,18 @@ public:
 
             m_program = clCreateProgramWithSource(m_context->get_cl_context(), 1, &programTextBuffer, &programTextSize, nullptr);
             cl_device_id deviceId = m_context->get_device_id();
-            cl_int buildResult = clBuildProgram(m_program, 1, &deviceId, "-Werror -cl-std=CL1.1", nullptr, nullptr);
+            cl_int buildResult = clBuildProgram(m_program, 1, &deviceId, "-Werror -cl-std=CL1.1 -cl-opt-disable", nullptr, nullptr);
             if (buildResult == CL_SUCCESS)
             {
                 m_kernel = clCreateKernel(m_program, m_kernelFunctionName.c_str(), NULL);
             }
             else
             {
-                std::array<char, 4096> buf;
-                clGetProgramBuildInfo(m_program, deviceId, CL_PROGRAM_BUILD_LOG, buf.size(), buf.data(), nullptr);
-                printf("Kernel Build failed:\n%s\n", buf.data());
+                size_t messageSize = 0;
+                clGetProgramBuildInfo(m_program, deviceId, CL_PROGRAM_BUILD_LOG, 0, nullptr, &messageSize);
+                std::vector<char> messageBuffer(messageSize);
+                clGetProgramBuildInfo(m_program, deviceId, CL_PROGRAM_BUILD_LOG, messageBuffer.size(), messageBuffer.data(), nullptr);
+                printf("Kernel Build failed:\n%s\n", messageBuffer.data());
             }
         }
     }
