@@ -128,7 +128,7 @@ public:
 
             m_program = clCreateProgramWithSource(m_context->get_cl_context(), 1, &programTextBuffer, &programTextSize, nullptr);
             cl_device_id deviceId = m_context->get_device_id();
-            cl_int buildResult = clBuildProgram(m_program, 1, &deviceId, "-Werror -cl-std=CL1.1 -cl-opt-disable", nullptr, nullptr);
+            cl_int buildResult = clBuildProgram(m_program, 1, &deviceId, "-Werror -cl-std=CL1.1", nullptr, nullptr);
             if (buildResult == CL_SUCCESS)
             {
                 m_kernel = clCreateKernel(m_program, m_kernelFunctionName.c_str(), NULL);
@@ -165,7 +165,7 @@ public:
         }
     }
 
-    void enqeue_execute(cl_uint workDimension, size_t localSize, size_t globalSize)
+    void enqeue_execute(cl_uint workDimension, size_t localSize, size_t globalSize, size_t offset = 0)
     {
         if (m_context && m_program && m_kernel)
         {
@@ -178,7 +178,7 @@ public:
                     queue, 
                     m_kernel, 
                     workDimension,
-                    nullptr,         // offset
+                    &offset,         // offset
                     &globalSize,
                     &localSize,
                     0, nullptr, nullptr

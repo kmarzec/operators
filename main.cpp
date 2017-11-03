@@ -53,10 +53,13 @@ void search_opencl()
     std::string programText((std::istreambuf_iterator<char>(std::ifstream("../program.cl"))), std::istreambuf_iterator<char>());
 
 
-    timer timer;
 
-    const size_t dataSize = 1394;
+   // const size_t dataSize = 1394;
+    const size_t dataSize = 100000 * 1024;
+
     const size_t resultDataSizeBytes = dataSize * sizeof(cl_long);
+
+    const size_t maxDataSizePerIteration = 1024 * 10000;
 
 
     opencl_driver driver;
@@ -68,7 +71,25 @@ void search_opencl()
     opencl_mem_buffer_ptr resultBuff = kernel.add_arg_buffer(CL_MEM_WRITE_ONLY, resultDataSizeBytes);
 
 
-    kernel.enqeue_execute(1, (dataSize)/2, dataSize);
+    timer timer;
+
+    size_t itemStart = 0;
+    size_t itemEnd = 0;
+    while (itemStart < dataSize)
+    {
+        itemEnd = itemStart + maxDataSizePerIteration;
+        itemEnd = (itemEnd > dataSize) ? dataSize : itemEnd;
+
+        kernel.enqeue_execute(1,  512, itemEnd - itemStart, itemStart);
+
+        itemStart = itemEnd;
+    }
+
+
+   // kernel.enqeue_execute(1, /*(dataSize)/2*/ 100, dataSize);
+    
+    
+    
     resultBuff->enqueue_read();
     cl_long* result = (cl_long*)resultBuff->get_host_buffer();
 
@@ -76,6 +97,26 @@ void search_opencl()
 
     float time = timer.get_elapsed_time();
 
+
+    /*
+    expression<9>::init();
+    for (int i = 0; i < dataSize; ++i)
+    {
+        expression<9> e;
+        e.resolve_expression(i);
+        e.evaluate();
+
+        if (e.get_result().is_number() && result[i] != e.get_result().number.numerator)
+        {
+            printf("fuck %d\n", i);
+        }
+        
+
+       // printf("cpu_res[%d] = %I64d %s \n", i, e.get_result().number.numerator, e.get_result().is_number() ? "" : "ERROR");
+
+      //  printf("gpu_res[%d]: %I64d\n", i, result[i]);
+    }
+    */
     
 
 /*

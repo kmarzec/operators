@@ -29,13 +29,13 @@
 
 bool safe_mul(long a, long b, long* res)
 {
-    *res = a * b;
-
+    //*res = a * b;
+    *res = mad_sat(a, b, 0L);
     if (a != 0)
     {
         long x = (*res) / a;
 
-        printf("\ta: %ld, b: %ld, res: %ld, x: %ld\n", a, b, *res, x);
+        //printf("\ta: %ld, b: %ld, res: %ld, x: %ld\n", a, b, *res, x);
 
         if (x != b)
         {
@@ -68,7 +68,7 @@ void ipow(long base, long exponent, long* result)
             if(!safe_mul(*result, base, result))
             //if (*result < 0 ||  *result / base != prevResult)
             {
-                printf("ipow OVERFLOW1 base: %ld, exp: %ld, ipow res: %ld\n", _base, _exponent, *result);
+                //printf("ipow OVERFLOW1 base: %ld, exp: %ld, ipow res: %ld\n", _base, _exponent, *result);
                 (*result) = 1L;
                 return;
             }
@@ -83,14 +83,14 @@ void ipow(long base, long exponent, long* result)
         //if (base < 0 || base / prevBase != prevBase)
         if (!safe_mul(base, base, &base))
         {
-            printf("ipow OVERFLOW2 base: %ld, exp: %ld, ipow res: %ld\n", _base, _exponent, *result);
+           // printf("ipow OVERFLOW2 base: %ld, exp: %ld, ipow res: %ld\n", _base, _exponent, *result);
             (*result) = 1L;
 
             return;
         }
     }
 
-    printf("ipow base: %ld, exp: %ld, ipow res: %ld\n", _base, _exponent, *result);
+   // printf("ipow base: %ld, exp: %ld, ipow res: %ld\n", _base, _exponent, *result);
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -464,6 +464,11 @@ void rpn_expression_evaluate(struct rpn_expression* t)
 
 }
 
+struct rpn_item rpn_expression_get_stack_top(struct rpn_expression* t)
+{
+    return rpn_stack_top(&t->m_stack);
+}
+
 ///--------------------------------------
 ///
 
@@ -539,6 +544,12 @@ void expression_evaluate(struct expression* t)
     rpn_expression_evaluate(&t->m_rpnExpression);
 }
 
+struct rpn_item expression_get_result(struct expression* t)
+{
+    return rpn_expression_get_stack_top(&t->m_rpnExpression);
+}
+
+
 ///--------------------------------------
 ///
 
@@ -552,5 +563,7 @@ __kernel void hello(__global long* results)
     expression_resolve_expression(&e, id);
     expression_evaluate(&e);
 
-    results[id] = e.aiOpLocations[0];
+    struct rpn_item result = expression_get_result(&e);
+
+    results[id] = result.number.numerator;
 }
